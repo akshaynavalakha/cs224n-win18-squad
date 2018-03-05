@@ -175,6 +175,97 @@ class BasicAttn(object):
 
             return attn_dist, output
 
+class BiDafAttn(object):
+    """Module for bidirectional attention.
+
+    Note: in this module we use the terminology of "keys" and "values" (see lectures).
+    In the terminology of "X attends to Y", "keys attend to values".
+
+    In the bidaf model, the keys are the context hidden states
+    and the values are the question hidden states for C2Q attention.
+
+    the keys are the question hidden states and values are context hidden states
+    and the values are the question hidden states for C2Q attention.
+
+    We choose to use general terminology of keys and values in this module
+    (rather than context and question) to avoid confusion if you reuse this
+    module with other inputs.
+    """
+
+    def __init__(self, keep_prob, key_vec_size, value_vec_size):
+        """
+        Inputs:
+          keep_prob: tensor containing a single scalar that is the keep probability (for dropout)
+          key_vec_size: size of the key vectors. int
+          value_vec_size: size of the value vectors. int
+        """
+        self.keep_prob = keep_prob
+        self.key_vec_size = key_vec_size
+        self.value_vec_size = value_vec_size
+
+    def build_graph(self, values, values_mask, keys, keys_mask):
+        """
+        Keys attend to values.
+        For each key, return an attention distribution and an attention output vector.
+
+        Inputs:
+          values: Tensor shape (batch_size, num_values, value_vec_size).
+          values_mask: Tensor shape (batch_size, num_values).
+            1s where there's real input, 0s where there's padding
+          keys: Tensor shape (batch_size, num_keys, value_vec_size)
+
+        Outputs:
+          attn_dist: Tensor shape (batch_size, num_keys, num_values).
+            For each key, the distribution should sum to 1,
+            and should be 0 in the value locations that correspond to padding.
+          output: Tensor shape (batch_size, num_keys, hidden_size).
+            This is the attention output; the weighted sum of the values
+            (using the attention distribution as weights).
+        """
+        with vs.variable_scope("BiDafAttn"):
+
+            # Calculate the similarity matrix
+            num_values = tf.shape(values)[1]
+            num_keys = tf.shape(keys)[1]
+            keys_dim = tf.shape(keys)[2]
+
+
+
+
+            keys_expand = tf.tile(tf.expand_dims(keys,2), multiples=[1,1,num_values,1]) # (batch_size, num_keys, num_values,key_vec_size)
+            values_expand = tf.tile(tf.expand_dims(values, 1), multiples=[1, num_keys, 1, 1])  # (batch_size, num_keys, num_values,key_vec_size)
+
+
+            input = tf.concat([keys_expand, values_expand, keys_expand*values_expand], axis=3) # # (batch_size, num_keys, num_values, 3*key_vec_size)
+
+            logits = tf.contrib.layers.fully_connected(input, num_outputs=1, activation_fn=None) # (batch_size, num_keys, num_values, 1)
+            attn_logits = tf.squeeze(logits, axis=[3])  # (batch_size, num_keys, num_values)
+
+            keys_mask_expand = tf.expand_dims(keys_mask, 2)
+            values_mask_expand = tf.expand_dims(values_mask,1)
+
+            masking = tf.matmul(keys_mask_expand, values_mask_expand) # (batch_size, num_keys, num_values)
+
+            m_vector = tf.reduce_max(attn_logits, axis=2) # (batch_size, num_keys)
+            _, c_hat_attn = masked_softmax(m_vector, keys_mask, 1)
+            c_hat = tf.reduce_sum(tf.multiply(tf.expand_dims(c_hat_attn,2),keys),1) #batch_size, vec_size
+            c_hat_expand = tf.expand_dims(c_hat, 1)
+
+            _, a_hat_attn = masked_softmax(attn_logits, values_mask_expand, 2) #(batch_size, num_keys, num_values)
+            # Use attention distribution to take weighted sum of values
+            a_hat = tf.matmul(a_hat_attn, values)  # shape (batch_size, num_keys, value_vec_size)
+
+            output = tf.concat([keys, a_hat, tf.multiply(keys,a_hat),tf.multiply(keys, c_hat_expand)], axis=2)
+
+
+            # Apply dropout
+            output = tf.nn.dropout(output, self.keep_prob)
+
+
+            return  output
+
+
+
 
 def masked_softmax(logits, mask, dim):
     """
@@ -199,3 +290,5 @@ def masked_softmax(logits, mask, dim):
     masked_logits = tf.add(logits, exp_mask) # where there's padding, set logits to -large
     prob_dist = tf.nn.softmax(masked_logits, dim)
     return masked_logits, prob_dist
+
+
