@@ -232,26 +232,30 @@ class BiDafAttn(object):
 
 
 
-            keys_expand = tf.tile(tf.expand_dims(keys,2), multiples=[1,1,num_values,1]) # (batch_size, num_keys, num_values,key_vec_size)
-            values_expand = tf.tile(tf.expand_dims(values, 1), multiples=[1, num_keys, 1, 1])  # (batch_size, num_keys, num_values,key_vec_size)
+            keys_expand = tf.expand_dims(keys,2) # (batch_size, num_keys, 1,key_vec_size)
+            values_expand = tf.expand_dims(values, 1)  # (batch_size, 1, num_values,key_vec_size)
+
+            temp = tf.multiply(keys_expand, values_expand) #(batch_size, num_keys, num_values, key_vec_size)
 
 
-            input = tf.concat([keys_expand, values_expand, keys_expand*values_expand], axis=3) # # (batch_size, num_keys, num_values, 3*key_vec_size)
+            logits_keys = tf.layers.dense(keys_expand, 1, activation=None) # (batch_size, num_keys, 1, 1)
+            logits_values = tf.layers.dense(values_expand, 1, activation=None)  # (batch_size, 1, num_values, 1)
+            logits_temp =  tf.layers.dense(temp, 1, activation=None) #(batch_size, num_keys, num_value, 1)
 
-            logits = tf.contrib.layers.fully_connected(input, num_outputs=1, activation_fn=None) # (batch_size, num_keys, num_values, 1)
-            attn_logits = tf.squeeze(logits, axis=[3])  # (batch_size, num_keys, num_values)
+            similarity_matrix = logits_keys + logits_values + logits_temp  # # (batch_size, num_keys, num_values, 1)
+            similarity_matrix = tf.squeeze(similarity_matrix, axis=[3])  # (batch_size, num_keys, num_values)
 
-            keys_mask_expand = tf.expand_dims(keys_mask, 2)
+           # keys_mask_expand = tf.expand_dims(keys_mask, 2)
             values_mask_expand = tf.expand_dims(values_mask,1)
 
-            masking = tf.matmul(keys_mask_expand, values_mask_expand) # (batch_size, num_keys, num_values)
+          #  masking = tf.matmul(keys_mask_expand, values_mask_expand) # (batch_size, num_keys, num_values)
 
-            m_vector = tf.reduce_max(attn_logits, axis=2) # (batch_size, num_keys)
+            m_vector = tf.reduce_max(similarity_matrix, axis=2) # (batch_size, num_keys)
             _, c_hat_attn = masked_softmax(m_vector, keys_mask, 1)
             c_hat = tf.reduce_sum(tf.multiply(tf.expand_dims(c_hat_attn,2),keys),1) #batch_size, vec_size
             c_hat_expand = tf.expand_dims(c_hat, 1)
 
-            _, a_hat_attn = masked_softmax(attn_logits, values_mask_expand, 2) #(batch_size, num_keys, num_values)
+            _, a_hat_attn = masked_softmax(similarity_matrix, values_mask_expand, 2) #(batch_size, num_keys, num_values)
             # Use attention distribution to take weighted sum of values
             a_hat = tf.matmul(a_hat_attn, values)  # shape (batch_size, num_keys, value_vec_size)
 
