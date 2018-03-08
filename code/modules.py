@@ -435,3 +435,66 @@ class MODEL_LAYER_BIDAF(object):
             out = tf.nn.dropout(out, self.keep_prob)
 
         return out
+
+
+class END_WORD_LAYER(object):
+    """
+    This is a 2 layer LSTM network
+
+    It takes in the input from the attention layer
+
+    Note: In lecture 8, we talked about how you might use a RNN as an "encoder"
+    to get a single, fixed size vector representation of a sequence
+    (e.g. by taking element-wise max of hidden states).
+    Here, we're using the RNN as an "encoder" but we're not taking max;
+    we're just returning all the hidden states. The terminology "encoder"
+    still applies because we're getting a different "encoding" of each
+    position in the sequence, and we'll use the encodings downstream in the model.
+
+    This code uses a bidirectional GRU, but you could experiment with other types of RNN.
+    """
+
+    def __init__(self, hidden_size, keep_prob):
+        """
+        Inputs:
+          hidden_size: int. Hidden size of the RNN
+          keep_prob: Tensor containing a single scalar that is the keep probability (for dropout)
+        """
+        self.hidden_size = hidden_size
+        self.keep_prob = keep_prob
+
+        # layer 1
+        self.rnn_cell_fw_1 = rnn_cell.BasicLSTMCell(self.hidden_size, forget_bias=1.0)
+        self.rnn_cell_fw_1 = DropoutWrapper(self.rnn_cell_fw_1, input_keep_prob=self.keep_prob)
+        self.rnn_cell_bw_1 = rnn_cell.BasicLSTMCell(self.hidden_size, forget_bias=1.0)
+        self.rnn_cell_bw_1 = DropoutWrapper(self.rnn_cell_bw_1, input_keep_prob=self.keep_prob)
+
+
+
+    def build_graph(self, inputs, masks, start_state):
+        """
+        Inputs:
+          inputs: Tensor shape (batch_size, seq_len, input_size)
+          masks: Tensor shape (batch_size, seq_len).
+            Has 1s where there is real input, 0s where there's padding.
+            This is used to make sure tf.nn.bidirectional_dynamic_rnn doesn't iterate through masked steps.
+
+        Returns:
+          out: Tensor shape (batch_size, seq_len, hidden_size*2).
+            This is all hidden states (fw and bw hidden states are concatenated).
+        """
+        with vs.variable_scope("END_WORD"):
+            input_lens = tf.reduce_sum(masks, reduction_indices=1) # shape (batch_size)
+
+            # Note: fw_out and bw_out are the hidden states for every timestep.
+            # Each is shape (batch_size, seq_len, hidden_size).
+            (fw_out_1, bw_out_1), _ = tf.nn.bidirectional_dynamic_rnn(self.rnn_cell_fw_1, self.rnn_cell_bw_1, inputs, input_lens, dtype=tf.float32, initial_state_fw=start_state)
+
+            # Concatenate the forward and backward hidden states
+            out = tf.concat([fw_out_1, bw_out_1], 2)
+
+            # Apply dropout
+
+            out = tf.nn.dropout(out, self.keep_prob)
+
+        return out

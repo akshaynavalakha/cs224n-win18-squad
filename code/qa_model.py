@@ -30,7 +30,7 @@ from tensorflow.python.ops import embedding_ops
 from evaluate import exact_match_score, f1_score
 from data_batcher import get_batch_generator
 from pretty_print import print_example
-from modules import RNNEncoder, SimpleSoftmaxLayer, BasicAttn, BiDafAttn, RNNEncoder_LSTM, MODEL_LAYER_BIDAF
+from modules import RNNEncoder, SimpleSoftmaxLayer, BasicAttn, BiDafAttn, RNNEncoder_LSTM, MODEL_LAYER_BIDAF, END_WORD_LAYER
 
 logging.basicConfig(level=logging.INFO)
 
@@ -114,6 +114,7 @@ class QAModel(object):
             # using the placeholders self.context_ids and self.qn_ids
             self.context_embs = embedding_ops.embedding_lookup(embedding_matrix, self.context_ids) # shape (batch_size, context_len, embedding_size)
             self.qn_embs = embedding_ops.embedding_lookup(embedding_matrix, self.qn_ids) # shape (batch_size, question_len, embedding_size)
+            self.ans_start_embs = embedding_ops.embedding_lookup(embedding_matrix, self.ans_span[:,0]) #shape (batch_size, 1 , emdedding_size)
 
 
     def build_graph(self):
@@ -187,10 +188,15 @@ class QAModel(object):
 
             # Use softmax layer to compute probability distribution for end location
            # Note this produces self.logits_end and self.probdist_end, both of which have shape (batch_size, context_len)
-            # Need to modify this
+
+
             with vs.variable_scope("EndDist"):
+                initial_state = tf.contrib.layers.fully_connected(self.ans_start_embs, num_outputs=self.FLAGS.hidden_size, activation_fn=None) #(batch_size, 1, hidden_size)
+                end_word_layer = END_WORD_LAYER(self.FLAGS.hidden_size, self.keep_prob)
+                end_layer_out = end_word_layer.build_graph(attn_output, self.context_mask, initial_state)
+                blended_reps_end = tf.concat([attn_output, end_layer_out], axis=2)
                 softmax_layer_end = SimpleSoftmaxLayer()
-                self.logits_end, self.probdist_end = softmax_layer_end.build_graph(blended_reps_start, self.context_mask)
+                self.logits_end, self.probdist_end = softmax_layer_end.build_graph(blended_reps_end, self.context_mask)
 
 
     def add_loss(self):
