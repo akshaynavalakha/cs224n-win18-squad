@@ -31,19 +31,21 @@ class LSTMEncoder(object):
         """
         self.hidden_size = hidden_size #200
         self.keep_prob = keep_prob
-        self.lstm = tf.nn.rnn_cell.LSTMCell(self.hidden_size)
+        self.lstm = tf.nn.rnn_cell.BasicLSTMCell(self.hidden_size, forget_bias=1.0)
+        self.lstm = tf.nn.rnn_cell.DropoutWrapper(cell=self.lstm, input_keep_prob=self.keep_prob)
         #self.question_length = 30
         #self.context_length = 600
 
 
-    def build_graph(self, inputs, type):
+    def build_graph(self, inputs, masks, type):
 
         with vs.variable_scope("LSTMEncoder"):
+            input_lens = tf.reduce_sum(masks, reduction_indices=1)
             inputs_size=inputs.get_shape().as_list()
             inputs_temp=inputs
 
             # 1) get encoding from LSTM
-            C_or_Q, _ = tf.nn.dynamic_rnn(self.lstm, inputs_temp, dtype=tf.float32)
+            C_or_Q, _ = tf.nn.dynamic_rnn(self.lstm, inputs_temp, sequence_length=input_lens, dtype=tf.float32)
 
 
             if type=="question":
@@ -124,8 +126,10 @@ class CoAttention(object):
 
             with tf.variable_scope('Coatt_encoder'):
                 # LSTM for coattention encoding
-                cell_fw = tf.nn.rnn_cell.LSTMCell(self.query_hidden_size)
-                cell_bw = tf.nn.rnn_cell.LSTMCell(self.query_hidden_size)
+                cell_fw = tf.nn.rnn_cell.BasicLSTMCell(self.query_hidden_size, forget_bias=1.0)
+                cell_fw = DropoutWrapper(cell_fw, input_keep_prob=self.keep_prob)
+                cell_bw = tf.nn.rnn_cell.BasicLSTMCell(self.query_hidden_size, forget_bias=1.0)
+                cell_bw = DropoutWrapper(cell_bw, input_keep_prob=self.keep_prob)
                 input_lens = tf.reduce_sum(context_mask, reduction_indices=1)
                 #?, 601, 400
                 (fw_out, bw_out), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, CO_ATT,
@@ -136,8 +140,11 @@ class CoAttention(object):
                 # Remove the sentinel vector from last row
                 U_2 = tf.slice(U_1, [0,0,0], [tf.shape(U_1)[0], dims[1]-1, dims[2]])
                 U_2 = tf.reshape(U_2, [tf.shape(U_1)[0], dims[1]-1, dims[2]])
+                #?, 601, 400
                 U_3 = tf.nn.dropout(U_2, self.keep_prob)
+
             out = tf.nn.dropout(U_3, self.keep_prob)
+            #?, 601, 400
             return out
 
 def masked_softmax(logits, mask, dim):
