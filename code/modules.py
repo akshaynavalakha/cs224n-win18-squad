@@ -471,7 +471,7 @@ class END_WORD_LAYER(object):
 
 
 
-    def build_graph(self, inputs, masks, start_state):
+    def build_graph(self, inputs, masks):
         """
         Inputs:
           inputs: Tensor shape (batch_size, seq_len, input_size)
@@ -488,7 +488,7 @@ class END_WORD_LAYER(object):
 
             # Note: fw_out and bw_out are the hidden states for every timestep.
             # Each is shape (batch_size, seq_len, hidden_size).
-            (fw_out_1, bw_out_1), _ = tf.nn.bidirectional_dynamic_rnn(self.rnn_cell_fw_1, self.rnn_cell_bw_1, inputs, input_lens, dtype=tf.float32, initial_state_fw=start_state)
+            (fw_out_1, bw_out_1), _ = tf.nn.bidirectional_dynamic_rnn(self.rnn_cell_fw_1, self.rnn_cell_bw_1, inputs, input_lens, dtype=tf.float32)
 
             # Concatenate the forward and backward hidden states
             out = tf.concat([fw_out_1, bw_out_1], 2)

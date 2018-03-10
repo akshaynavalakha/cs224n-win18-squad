@@ -114,7 +114,6 @@ class QAModel(object):
             # using the placeholders self.context_ids and self.qn_ids
             self.context_embs = embedding_ops.embedding_lookup(embedding_matrix, self.context_ids) # shape (batch_size, context_len, embedding_size)
             self.qn_embs = embedding_ops.embedding_lookup(embedding_matrix, self.qn_ids) # shape (batch_size, question_len, embedding_size)
-            self.ans_start_embs = embedding_ops.embedding_lookup(embedding_matrix, self.ans_span[:,0]) #shape (batch_size, 1 , emdedding_size)
 
 
     def build_graph(self):
@@ -134,6 +133,7 @@ class QAModel(object):
         if self.FLAGS.model == "baseline" :
             encoder = RNNEncoder(self.FLAGS.hidden_size, self.keep_prob)
         elif self.FLAGS.model == "bidaf":
+            print "INSIDE the BIDAF model"
             encoder = RNNEncoder_LSTM(self.FLAGS.hidden_size, self.keep_prob)
         elif self.FLAGS.model == "coatt":
             encoder = LSTMEncoder(self.FLAGS.hidden_size, self.keep_prob)
@@ -224,12 +224,19 @@ class QAModel(object):
 
 
             with vs.variable_scope("EndDist"):
-                initial_state = tf.contrib.layers.fully_connected(self.ans_start_embs, num_outputs=self.FLAGS.hidden_size, activation_fn=None) #(batch_size, 1, hidden_size)
-                end_word_layer = END_WORD_LAYER(self.FLAGS.hidden_size, self.keep_prob)
-                end_layer_out = end_word_layer.build_graph(attn_output, self.context_mask, initial_state)
-                blended_reps_end = tf.concat([attn_output, end_layer_out], axis=2)
+                # Concatenate the start logits with the modelling layer output to get the input to the
+                # end word lstm
+                #self.logits_start has a shape of #(batch_size, context_len)
+                logits_start_expand = tf.expand_dims(self.logits_start, axis=2) #(batch_size, context_len, 1)
+                end_lstm_input = tf.concat([logits_start_expand, mod_layer_out], axis=2) #(batch_size, context_len, 1 + hidden_size*2)
+
+                # LSTM
+                end_layer = END_WORD_LAYER(self.FLAGS.hidden_size, self.keep_prob)
+                blended_reps_end = end_layer.build_graph(end_lstm_input, self.context_mask)
+
+                blended_reps_end_final = tf.concat([attn_output, blended_reps_end], axis=2)
                 softmax_layer_end = SimpleSoftmaxLayer()
-                self.logits_end, self.probdist_end = softmax_layer_end.build_graph(blended_reps_end, self.context_mask)
+                self.logits_end, self.probdist_end = softmax_layer_end.build_graph(blended_reps_end_final, self.context_mask)
 
 
     def add_loss(self):
