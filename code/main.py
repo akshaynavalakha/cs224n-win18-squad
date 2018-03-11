@@ -42,7 +42,8 @@ tf.app.flags.DEFINE_integer("gpu", 0, "Which GPU to use, if you have multiple.")
 tf.app.flags.DEFINE_string("mode", "train", "Available modes: train / show_examples / official_eval")
 tf.app.flags.DEFINE_string("experiment_name", "", "Unique name for your experiment. This will create a directory by this name in the experiments/ directory, which will hold all data related to this experiment")
 tf.app.flags.DEFINE_integer("num_epochs", 0, "Number of epochs to train. 0 means train indefinitely")
-tf.app.flags.DEFINE_string("model", "baseline", "Available modes: baseline / bidaf")
+tf.app.flags.DEFINE_string("model", "baseline", "Available modes: baseline / bidaf /coatt")
+tf.app.flags.DEFINE_string("minibatch_dir", "debug", "")
 
 # Hyperparameters
 tf.app.flags.DEFINE_float("learning_rate", 0.001, "Learning rate.")
@@ -126,9 +127,9 @@ def main(unused_argv):
     emb_matrix, word2id, id2word = get_glove(FLAGS.glove_path, FLAGS.embedding_size)
 
     # Get filepaths to train/dev datafiles for tokenized queries, contexts and answers
-    train_context_path = os.path.join(FLAGS.data_dir, "train.context")
-    train_qn_path = os.path.join(FLAGS.data_dir, "train.question")
-    train_ans_path = os.path.join(FLAGS.data_dir, "train.span")
+    train_context_path = os.path.join(FLAGS.data_dir, FLAGS.minibatch_dir+".context")
+    train_qn_path = os.path.join(FLAGS.data_dir, FLAGS.minibatch_dir+".question")
+    train_ans_path = os.path.join(FLAGS.data_dir, FLAGS.minibatch_dir+".span")
     dev_context_path = os.path.join(FLAGS.data_dir, "dev.context")
     dev_qn_path = os.path.join(FLAGS.data_dir, "dev.question")
     dev_ans_path = os.path.join(FLAGS.data_dir, "dev.span")
