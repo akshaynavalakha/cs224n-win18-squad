@@ -46,7 +46,7 @@ class LSTMEncoder(object):
 
             # TODO replace this with bidirectional LSTM to get more hidden states
             # 1) get encoding from LSTM
-            C_or_Q, _ = tf.nn.dynamic_rnn(self.lstm, inputs_temp, dtype=tf.float32)
+            C_or_Q, _ = tf.nn.dynamic_rnn(self.lstm, inputs_temp, sequence_length=input_lens, dtype=tf.float32)
 
 
             if type=="question":
