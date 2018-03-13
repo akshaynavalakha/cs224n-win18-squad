@@ -30,7 +30,7 @@ from tensorflow.python.ops import embedding_ops
 from evaluate import exact_match_score, f1_score
 from data_batcher import get_batch_generator
 from pretty_print import print_example
-from modules import RNNEncoder, SimpleSoftmaxLayer, BasicAttn, BiDafAttn, RNNEncoder_LSTM, MODEL_LAYER_BIDAF, END_WORD_LAYER
+from modules import RNNEncoder, SimpleSoftmaxLayer, BasicAttn, BiDafAttn, RNNEncoder_LSTM, MODEL_LAYER_BIDAF, END_WORD_LAYER, ANSWER_DECODER, masked_softmax
 from dcan import LSTMEncoder, CoAttention
 logging.basicConfig(level=logging.INFO)
 
@@ -132,7 +132,7 @@ class QAModel(object):
         # between the context and the question.
         if self.FLAGS.model == "baseline" :
             encoder = RNNEncoder(self.FLAGS.hidden_size, self.keep_prob)
-        elif self.FLAGS.model == "bidaf":
+        elif self.FLAGS.model == "bidaf" or "bidaf_dynamic":
             print "INSIDE the BIDAF model"
             encoder = RNNEncoder_LSTM(self.FLAGS.hidden_size, self.keep_prob)
         elif self.FLAGS.model == "coatt":
@@ -238,6 +238,47 @@ class QAModel(object):
                 softmax_layer_end = SimpleSoftmaxLayer()
                 self.logits_end, self.probdist_end = softmax_layer_end.build_graph(blended_reps_end_final, self.context_mask)
 
+        elif self.FLAGS.model =="bidaf_dynamic":
+            attn_layer = BiDafAttn(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2)
+            attn_output = attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens, self.context_mask) # attn_output is shape (batch_size, context_len, hidden_size*8)
+
+            # Set of vectors which produces a set of query aware feature vectors for each word in the context
+            #blended_reps = attn_output  #(batch_size, num_keys, 4*value_vec_size)
+
+            # In BIDAF the attention output is feed to a modeling layer
+            # The Modeling layer is a 2 layer lstm
+            mod_layer = MODEL_LAYER_BIDAF(self.FLAGS.hidden_size, self.keep_prob)
+            mod_layer_out = mod_layer.build_graph(attn_output, self.context_mask)  # (batch_size, context_len, hidden_size*2)
+            blended_reps_start = tf.concat([attn_output,mod_layer_out], axis=2)  # (batch_size, context_len, hidden_size*10)
+
+            # We now feed this to dynamic decoder module coded in Answer decoder
+            # the output of the decoder are start, end, alpha_logits and beta_logits
+            # start and end have a shape of (batch_size, num_iterations)
+            #alpha_logits and beta_logits have a shape of (batch_size, num_iterations, inpit_dim)
+            decoder = ANSWER_DECODER(self.FLAGS.hidden_size, self.keep_prob, 5, 4, self.FLAGS.batch_size)
+            u_s_init = blended_reps_start[:,0,:]
+            u_e_init = blended_reps_start[:,0,:]
+            start_location, end_location, alpha_logits, beta_logits = decoder.build_graph(blended_reps_start, self.context_mask, u_s_init, u_e_init)
+
+
+            # Use softmax layer to compute probability distribution for start location
+            # Note this produces self.logits_start and self.probdist_start, both of which have shape (batch_size, context_len)
+            with vs.variable_scope("StartDist"):
+                #softmax_layer_start = SimpleSoftmaxLayer()
+                logits_start_tmp = [masked_softmax(logits, self.context_mask,1) for logits in alpha_logits]
+                self.alpha_logits , alpha_logits_probs = zip(*logits_start_tmp)
+                self.logits_start, self.probdist_start = self.alpha_logits[3], alpha_logits_probs[3]
+
+            # Use softmax layer to compute probability distribution for end location
+           # Note this produces self.logits_end and self.probdist_end, both of which have shape (batch_size, context_len)
+
+
+            with vs.variable_scope("EndDist"):
+                logits_end_tmp = [masked_softmax(logits, self.context_mask,1) for logits in beta_logits]
+                self.beta_logits , beta_logits_probs = zip(*logits_start_tmp)
+                self.logits_end, self.probdist_end = self.beta_logits[3], beta_logits_probs[3]
+
+                self.logits_end, self.probdist_end = zip(*logits_end_tmp)
 
     def add_loss(self):
         """
@@ -260,19 +301,34 @@ class QAModel(object):
         """
         with vs.variable_scope("loss"):
 
-            # Calculate loss for prediction of start position
-            loss_start = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits_start, labels=self.ans_span[:, 0]) # loss_start has shape (batch_size)
-            self.loss_start = tf.reduce_mean(loss_start) # scalar. avg across batch
-            tf.summary.scalar('loss_start', self.loss_start) # log to tensorboard
+            if self.FLAGS.model == "bidaf_dynamic":
+                loss_start = [tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=self.ans_span[:, 0]) for logits in self.alpha_logits]
+                loss_end = [tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=self.ans_span[:, 1]) for logits in self.beta_logits]
 
-            # Calculate loss for prediction of end position
-            loss_end = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits_end, labels=self.ans_span[:, 1])
-            self.loss_end = tf.reduce_mean(loss_end)
-            tf.summary.scalar('loss_end', self.loss_end)
+                self.loss_start = tf.reduce_sum(loss_start)
+                tf.summary.scalar('loss_start', self.loss_start)  # log to tensorboard
 
-            # Add the two losses
-            self.loss = self.loss_start + self.loss_end
-            tf.summary.scalar('loss', self.loss)
+                self.loss_end = tf.reduce_mean(loss_end)
+                tf.summary.scalar('loss_end', self.loss_end)
+
+                # Add the two losses
+                self.loss = self.loss_start + self.loss_end
+                tf.summary.scalar('loss', self.loss)
+
+            else:
+                # Calculate loss for prediction of start position
+                loss_start = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits_start, labels=self.ans_span[:, 0]) # loss_start has shape (batch_size)
+                self.loss_start = tf.reduce_mean(loss_start) # scalar. avg across batch
+                tf.summary.scalar('loss_start', self.loss_start) # log to tensorboard
+
+                # Calculate loss for prediction of end position
+                loss_end = tf.nn.sparse_softmax_cross_entropy_with_logits(logits=self.logits_end, labels=self.ans_span[:, 1])
+                self.loss_end = tf.reduce_mean(loss_end)
+                tf.summary.scalar('loss_end', self.loss_end)
+
+                # Add the two losses
+                self.loss = self.loss_start + self.loss_end
+                tf.summary.scalar('loss', self.loss)
 
 
     def run_train_iter(self, session, batch, summary_writer):

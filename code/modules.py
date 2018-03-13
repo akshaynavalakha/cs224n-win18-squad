@@ -13,11 +13,12 @@
 # limitations under the License.
 
 """This file contains some basic model components"""
-
+import numpy as np
 import tensorflow as tf
 from tensorflow.python.ops.rnn_cell import DropoutWrapper
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops import rnn_cell
+
 
 
 class RNNEncoder(object):
@@ -498,3 +499,169 @@ class END_WORD_LAYER(object):
             out = tf.nn.dropout(out, self.keep_prob)
 
         return out
+
+
+class ANSWER_DECODER(object):
+    """
+    This is a 2 layer LSTM network
+
+    It takes in the input from the attention layer
+
+    Note: In lecture 8, we talked about how you might use a RNN as an "encoder"
+    to get a single, fixed size vector representation of a sequence
+    (e.g. by taking element-wise max of hidden states).
+    Here, we're using the RNN as an "encoder" but we're not taking max;
+    we're just returning all the hidden states. The terminology "encoder"
+    still applies because we're getting a different "encoding" of each
+    position in the sequence, and we'll use the encodings downstream in the model.
+
+    This code uses a bidirectional GRU, but you could experiment with other types of RNN.
+    """
+
+    def __init__(self, hidden_size, keep_prob, max_iteration, max_pool, batch_size):
+        """
+        Inputs:
+          hidden_size: int. Hidden size of the RNN
+          keep_prob: Tensor containing a single scalar that is the keep probability (for dropout)
+        """
+        self.hidden_size = hidden_size
+        self.keep_prob = keep_prob
+        self.max_iteration = max_iteration
+        self.max_pool = max_pool
+        self.batch_size = batch_size
+
+        self.rnn_cell_fw = rnn_cell.BasicLSTMCell(self.hidden_size, forget_bias=1.0)
+        self.rnn_cell_fw = DropoutWrapper(self.rnn_cell_fw, input_keep_prob=self.keep_prob)
+
+    def build_graph(self, U_matrix, masks, u_s, u_e):
+        """
+        Inputs:
+          inputs: Tensor shape (batch_size, seq_len, input_size)
+          masks: Tensor shape (batch_size, seq_len).
+            Has 1s where there is real input, 0s where there's padding.
+            This is used to make sure tf.nn.bidirectional_dynamic_rnn doesn't iterate through masked steps.
+
+        Returns:
+          out: Tensor shape (batch_size, seq_len, hidden_size*2).
+            This is all hidden states (fw and bw hidden states are concatenated).
+        """
+
+        # us has a shape of [batch_size, 1, dim]
+        # ue has a shape of [batch_size, 1, dim]
+        # U has a shape of [batch_size, seq_len, dim]
+        # masks has a dimension [batch_size, seq_len]
+
+       # batch_size = U_matrix.get_shape().as_list()[0]
+        u_start = u_s
+        u_end = u_e
+        pos = tf.convert_to_tensor(np.arange(self.batch_size), dtype=tf.int32)
+
+        highway_alpha = HNM(self.hidden_size, self.keep_prob, self.max_iteration, self.max_pool, "alpha")
+        highway_beta  = HNM(self.hidden_size, self.keep_prob, self.max_iteration, self.max_pool, "beta")
+        start = []
+        end   = []
+        alpha_logits = []
+        beta_logits = []
+        cell = self.rnn_cell_fw
+
+        init_state = self.rnn_cell_fw.zero_state(self.batch_size, dtype=tf.float32)
+        with vs.variable_scope("ANSWER_DECODER"):
+            for time_step in range(self.max_iteration):
+                input_lstm = tf.concat([u_start, u_end], axis=1)  # (batch_size, 4*hidden_szie)
+                #input_lstm = tf.expand_dims(input_lstm, 1) #(batch_size, 1, 4*hidden_size)
+                if time_step > 0:
+                    tf.get_variable_scope().reuse_variables()
+                    reuse = True
+
+                output, hi =  cell(input_lstm, init_state)  #(batch_size,1, hidden_size)
+
+                alpha = highway_alpha.build_graph(U_matrix, masks, output, u_start, u_end, time_step ) #(batch_size, context_len)
+                beta  = highway_beta.build_graph(U_matrix, masks, output, u_start, u_end, time_step ) #(batch_size , context_len)
+
+                s_indx = tf.argmax(alpha, 1) #(batch_size, context_len)
+                e_indx = tf.argmax(beta, 1) #(batch_size, context_len)
+
+                # Update the u_start and u_end for the next iteration
+                fn_s = lambda position: index(U_matrix, s_indx, position)
+                u_start = tf.map_fn(lambda position: fn_s(position), pos, dtype=tf.float32)
+
+                fn_e = lambda position: index(U_matrix, e_indx, position)
+                u_end = tf.map_fn(lambda position: fn_e(position), pos, dtype=tf.float32)
+
+                # update the init_state for the next iteration
+                init_state = hi
+
+                if time_step != 0:
+                    start.append(s_indx)
+                    end.append(e_indx)
+                    alpha_logits.append(alpha)
+                    beta_logits.append(beta)
+
+        return start, end, alpha_logits, beta_logits
+
+
+
+class HNM(object):
+    " The function is used to calcualte the maxout given a Attention matrix , initial_guess, at hidden state"
+
+    def __init__(self, hidden_size, keep_prob, max_iteration, max_pool, scope):
+        """
+        Inputs:
+          hidden_size: int. Hidden size of the RNN
+          keep_prob: Tensor containing a single scalar that is the keep probability (for dropout)
+        """
+        self.hidden_size = hidden_size
+        self.keep_prob = keep_prob
+        self.max_iteration = max_iteration
+        self.max_pool = max_pool
+        self.scope = scope
+
+    def build_graph(self, U_matrix, masks, hidden_state, u_start, u_end, time_step):
+
+
+        with vs.variable_scope(self.scope):
+
+            if time_step > 0:
+                tf.get_variable_scope().reuse_variables()
+                use = True
+            else:
+                use = None
+
+            input_r = tf.concat([hidden_state, u_start, u_end], axis=1) # (batch_size, hidden_size + 2 * dims)
+            input_r = tf.expand_dims(input_r, 1)
+            r = tf.contrib.layers.fully_connected(input_r, num_outputs=self.hidden_size,activation_fn=tf.nn.tanh, scope=self.scope +'r', reuse=use)  # (batch_size , 1, hidden_size)
+
+            W_u = tf.contrib.layers.fully_connected(U_matrix, num_outputs=self.hidden_size*self.max_pool,activation_fn=None,scope=self.scope +'W_u', reuse=use)  # (batch_size, seq_len , hidden_size)
+            W_r = tf.contrib.layers.fully_connected(r, num_outputs=self.hidden_size*self.max_pool, activation_fn=None, scope=self.scope +'W_r', reuse=use)  # (bacth_szie, 1 , hidden_size)
+
+            m1_maxout_input = W_u + W_r  # (bacth_size , seq_len, hidden_size*max_pool)
+
+            m1 = tf.contrib.layers.maxout(m1_maxout_input, num_units=self.hidden_size, name=self.scope + 'm1')  # (bacth_size, seq_len, hidden_size)
+            m2_input = tf.contrib.layers.fully_connected(m1, num_outputs=self.hidden_size*self.max_pool, activation_fn=None, scope=self.scope +'m2_input', reuse=use)
+            m2 = tf.contrib.layers.maxout(m2_input, num_units=self.hidden_size, name=self.scope + 'm2')  # (bacth_size, seq_len, hidden_size)
+
+            out_in = tf.contrib.layers.fully_connected(tf.concat([m1, m2], axis=2), num_outputs=self.max_pool, activation_fn=None, scope=self.scope +'out_in', reuse=use)
+            out = tf.contrib.layers.maxout(out_in, num_units=1, name=self.scope + 'out')  # (bacth_size, seq_len, 1)
+            out = tf.squeeze(out, axis=2) #(batch_size, seq_len)
+
+        return out
+
+
+
+def index(U, s , position):
+    u_words = tf.gather(U, position)
+    s_indx = tf.gather(s, position)
+    word = tf.gather(u_words, s_indx)
+
+    return word
+
+
+
+
+
+
+
+
+
+
+
