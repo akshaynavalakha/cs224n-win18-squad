@@ -576,9 +576,14 @@ class ANSWER_DECODER(object):
                 output, hi =  cell(input_lstm, init_state)  #(batch_size,1, hidden_size)
 
                 alpha = highway_alpha.build_graph(U_matrix, masks, output, u_start, u_end, time_step ) #(batch_size, context_len)
-                beta  = highway_beta.build_graph(U_matrix, masks, output, u_start, u_end, time_step ) #(batch_size , context_len)
+                s_indx = tf.argmax(alpha, 1)  # (batch_size, context_len)
+                # Update the u_start and u_end for the next iteration
+                fn_s = lambda position: index(U_matrix, s_indx, position)
+                u_start = tf.map_fn(lambda position: fn_s(position), pos, dtype=tf.float32)
 
-                s_indx = tf.argmax(alpha, 1) #(batch_size, context_len)
+
+
+                beta  = highway_beta.build_graph(U_matrix, masks, output, u_start, u_end, time_step ) #(batch_size , context_len)
                 e_indx = tf.argmax(beta, 1) #(batch_size, context_len)
 
                 # Update the u_start and u_end for the next iteration

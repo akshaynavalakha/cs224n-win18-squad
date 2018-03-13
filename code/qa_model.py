@@ -275,10 +275,8 @@ class QAModel(object):
 
             with vs.variable_scope("EndDist"):
                 logits_end_tmp = [masked_softmax(logits, self.context_mask,1) for logits in beta_logits]
-                self.beta_logits , beta_logits_probs = zip(*logits_start_tmp)
+                self.beta_logits , beta_logits_probs = zip(*logits_end_tmp)
                 self.logits_end, self.probdist_end = self.beta_logits[3], beta_logits_probs[3]
-
-                self.logits_end, self.probdist_end = zip(*logits_end_tmp)
 
     def add_loss(self):
         """
