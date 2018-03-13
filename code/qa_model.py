@@ -256,9 +256,9 @@ class QAModel(object):
             # start and end have a shape of (batch_size, num_iterations)
             #alpha_logits and beta_logits have a shape of (batch_size, num_iterations, inpit_dim)
             decoder = ANSWER_DECODER(self.FLAGS.hidden_size, self.keep_prob, 5, 4, self.FLAGS.batch_size)
-            u_s_init = blended_reps_start[:,0,:]
-            u_e_init = blended_reps_start[:,0,:]
-            start_location, end_location, alpha_logits, beta_logits = decoder.build_graph(blended_reps_start, self.context_mask, u_s_init, u_e_init)
+            u_s_init = mod_layer_out[:,0,:]
+            u_e_init = mod_layer_out[:,0,:]
+            start_location, end_location, alpha_logits, beta_logits = decoder.build_graph(mod_layer_out, self.context_mask, u_s_init, u_e_init)
 
 
             # Use softmax layer to compute probability distribution for start location
