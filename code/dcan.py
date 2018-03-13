@@ -31,7 +31,7 @@ class LSTMEncoder(object):
         """
         self.hidden_size = hidden_size #200
         self.keep_prob = keep_prob
-        self.lstm = tf.nn.rnn_cell.LSTMBlockCell(self.hidden_size) #BasicLSTMCell
+        self.lstm = tf.nn.rnn_cell.BasicLSTMCell(self.hidden_size) #BasicLSTMCell LSTMBlockCell
         # TODO not sure if I want to add dropout here
         #self.lstm = tf.nn.rnn_cell.DropoutWrapper(cell=self.lstm, input_keep_prob=self.keep_prob)
 
@@ -55,18 +55,16 @@ class LSTMEncoder(object):
                 q_dash = tf.layers.dense(inputs_temp, C_or_Q.get_shape()[2], activation=tf.tanh)
                 inputs_temp = q_dash
                 # TODO if BiLSTM used then hideen size should change here
-                sentinel = tf.get_variable("sentinel_q", [1, self.hidden_size], initializer=tf.random_normal_initializer())
+                sentinel = tf.get_variable("sentinel_q", [1, 1, self.hidden_size], initializer=tf.random_normal_initializer())
             else:
                 # IF it is Context_hidden
-                sentinel = tf.get_variable("sentinel_c", [1, self.hidden_size], initializer=tf.random_normal_initializer()) # 1,200
+                sentinel = tf.get_variable("sentinel_c", [1, 1, self.hidden_size], initializer=tf.random_normal_initializer()) # 1,200
                 inputs_temp = C_or_Q
             #
-            # reshape sentinel
-            sentinel = tf.reshape(sentinel, (1, 1, -1)) #1, 1, 200(h)
             # reshape sentinel to add batch
-            sentinel = tf.tile(sentinel, (tf.shape(inputs_temp)[0], 1, 1)) #?, 1, 200(h)
-            # add sentinel at end
-            out = tf.concat([inputs_temp, sentinel], 1) # ?, 601, 200(h)
+            sentinel_tile = tf.tile(sentinel, [tf.shape(inputs_temp)[0], 1, 1]) #?, 1, 200(h)
+            # add sentinel at beginning!!!
+            out = tf.concat([sentinel_tile, inputs_temp], axis=1) # ?, 601, 200(h)
 
             out.get_shape().as_list()
 
@@ -90,11 +88,18 @@ class CoAttention(object):
         self.query_hidden_size = query_hidden_size
 
 
-    def build_graph(self, question_hiddens, context_mask, context_hiddens):
+    def build_graph(self, question_hiddens, qn_mask, context_hiddens, context_mask):
 
         with vs.variable_scope('Coattention') as scope:
             question_hiddens.get_shape().as_list() #? , 31, 200
             context_hiddens.get_shape().as_list()  #? ,601, 200
+
+            #Update masks add sentinel of ones at beginning
+            q_sent = tf.ones([tf.shape(qn_mask)[0], 1], dtype=tf.int32)
+            c_sent = tf.ones([tf.shape(context_mask)[0], 1], dtype=tf.int32)
+
+            qn_mask = tf.concat([q_sent, qn_mask], axis=1)
+            context_mask = tf.concat([c_sent, context_mask], axis=1)
 
             question_length = tf.shape(question_hiddens)[1]
             context_length = tf.shape(context_hiddens)[1]
@@ -123,18 +128,16 @@ class CoAttention(object):
             with tf.variable_scope('Coatt_encoder'):
                 # LSTM for coattention encoding
                 cell_fw = tf.nn.rnn_cell.BasicLSTMCell(self.query_hidden_size)
-                #cell_fw = DropoutWrapper(self.rnn_cell_fw, input_keep_prob=self.keep_prob)
                 cell_bw = tf.nn.rnn_cell.BasicLSTMCell(self.query_hidden_size)
                 input_lens = tf.reduce_sum(context_mask, reduction_indices=1)
                 #?, 601, 400
                 (fw_out, bw_out), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, CO_ATT,
-                                                       dtype=tf.float32, sequence_length=input_lens+1)
+                                                       dtype=tf.float32, sequence_length=input_lens)
                 U_1 = tf.concat([fw_out, bw_out], axis=2)
                 
                 dims = U_1.get_shape().as_list()
-                # Remove the sentinel vector from last row
-                U_2 = tf.slice(U_1, [0,0,0], [tf.shape(U_1)[0], dims[1]-1, dims[2]])
-                U_2 = tf.reshape(U_2, [tf.shape(U_1)[0], dims[1]-1, dims[2]])
+                # Remove the sentinel vector from beginning
+                U_2 = U_1[:, 1:]
 
 
             #?, 601, 400
