@@ -554,7 +554,11 @@ class ANSWER_DECODER(object):
        # batch_size = U_matrix.get_shape().as_list()[0]
         u_start = u_s
         u_end = u_e
-        pos = tf.convert_to_tensor(np.arange(self.batch_size), dtype=tf.int32)
+        batch_size = u_start.get_shape().as_list()[0]
+        if batch_size is None:
+            pos = []
+        else:
+            pos = tf.range(0, batch_size-1, 1)
 
         highway_alpha = HNM(self.hidden_size, self.keep_prob, self.max_iteration, self.max_pool, "alpha")
         highway_beta  = HNM(self.hidden_size, self.keep_prob, self.max_iteration, self.max_pool, "beta")
@@ -564,7 +568,7 @@ class ANSWER_DECODER(object):
         beta_logits = []
         cell = self.rnn_cell_fw
 
-        init_state = self.rnn_cell_fw.zero_state(self.batch_size, dtype=tf.float32)
+        init_state = (tf.zeros(shape=(tf.shape(U_matrix)[0], self.hidden_size)), tf.zeros(shape=(tf.shape(U_matrix)[0], self.hidden_size)))
         with vs.variable_scope("ANSWER_DECODER"):
             for time_step in range(self.max_iteration):
                 input_lstm = tf.concat([u_start, u_end], axis=1)  # (batch_size, 4*hidden_szie)
@@ -576,22 +580,28 @@ class ANSWER_DECODER(object):
                 output, hi =  cell(input_lstm, init_state)  #(batch_size,1, hidden_size)
 
                 alpha = highway_alpha.build_graph(U_matrix, masks, output, u_start, u_end, time_step ) #(batch_size, context_len)
-                s_indx = tf.argmax(alpha, 1)  # (batch_size, context_len)
+                s_indx =tf.one_hot(tf.argmax(alpha, 1), alpha.get_shape().as_list()[1], off_value=-10000.0, dtype=tf.float32)  # (batch_size, context_len)
+                s_indx = tf.expand_dims(s_indx,2)#(batch_size, context_len,1)
                 # Update the u_start and u_end for the next iteration
-                fn_s = lambda position: index(U_matrix, s_indx, position)
-                u_start = tf.map_fn(lambda position: fn_s(position), pos, dtype=tf.float32)
+                #fn_s = lambda position: index(U_matrix, s_indx, position)
+                #u_start = tf.map_fn(lambda position: fn_s(position), pos, dtype=tf.float32)
+                #u_start = U_matrix[:,s_indx,:]
+
+                u_start = tf.reduce_max(tf.multiply(U_matrix, s_indx), 1) #(batch_size, dim)
 
 
 
                 beta  = highway_beta.build_graph(U_matrix, masks, output, u_start, u_end, time_step ) #(batch_size , context_len)
-                e_indx = tf.argmax(beta, 1) #(batch_size, context_len)
+                e_indx = tf.one_hot(tf.argmax(beta, 1), alpha.get_shape().as_list()[1], off_value=-10000.0, dtype=tf.float32) #(batch_size, context_len)
+                e_indx = tf.expand_dims(e_indx,2) #(batch_size, context_len, 1)
+                u_end = tf.reduce_max(tf.multiply(U_matrix, e_indx), 1) #(batch_size, dim)
 
                 # Update the u_start and u_end for the next iteration
-                fn_s = lambda position: index(U_matrix, s_indx, position)
-                u_start = tf.map_fn(lambda position: fn_s(position), pos, dtype=tf.float32)
+              #  fn_s = lambda position: index(U_matrix, s_indx, position)
+               # u_start = tf.map_fn(lambda position: fn_s(position), pos, dtype=tf.float32)
 
-                fn_e = lambda position: index(U_matrix, e_indx, position)
-                u_end = tf.map_fn(lambda position: fn_e(position), pos, dtype=tf.float32)
+                #fn_e = lambda position: index(U_matrix, e_indx, position)
+                #u_end = tf.map_fn(lambda position: fn_e(position), pos, dtype=tf.float32)
 
                 # update the init_state for the next iteration
                 init_state = hi
@@ -641,12 +651,12 @@ class HNM(object):
 
             m1_maxout_input = W_u + W_r  # (bacth_size , seq_len, hidden_size*max_pool)
 
-            m1 = tf.contrib.layers.maxout(m1_maxout_input, num_units=self.hidden_size, name=self.scope + 'm1')  # (bacth_size, seq_len, hidden_size)
+            m1 = maxout(m1_maxout_input, self.hidden_size, axis=2)  # (bacth_size, seq_len, hidden_size)
             m2_input = tf.contrib.layers.fully_connected(m1, num_outputs=self.hidden_size*self.max_pool, activation_fn=None, scope=self.scope +'m2_input', reuse=use)
-            m2 = tf.contrib.layers.maxout(m2_input, num_units=self.hidden_size, name=self.scope + 'm2')  # (bacth_size, seq_len, hidden_size)
+            m2 = maxout(m2_input, num_units=self.hidden_size)  # (bacth_size, seq_len, hidden_size)
 
             out_in = tf.contrib.layers.fully_connected(tf.concat([m1, m2], axis=2), num_outputs=self.max_pool, activation_fn=None, scope=self.scope +'out_in', reuse=use)
-            out = tf.contrib.layers.maxout(out_in, num_units=1, name=self.scope + 'out')  # (bacth_size, seq_len, 1)
+            out = maxout(out_in, num_units=1)  # (bacth_size, seq_len, 1)
             out = tf.squeeze(out, axis=2) #(batch_size, seq_len)
 
         return out
@@ -661,11 +671,22 @@ def index(U, s , position):
     return word
 
 
+def maxout(inputs, num_units, axis=-1):
+    inputs = tf.convert_to_tensor(inputs)
+    shape = inputs.get_shape().as_list()
+    num_channels = shape[axis]
+    if num_channels % num_units:
+        raise ValueError('number of feautures({}) is not' 'a multiple of num_units({})'.format(num_channels, num_units))
 
+    shape[axis] = num_units
+    shape +=[num_channels // num_units]
 
+    for i in range(len(shape)):
+        if shape[i] is None:
+            shape[i] = tf.shape(inputs)[i]
+    outputs = tf.reduce_max(tf.reshape(inputs,shape), -1, keep_dims=False)
 
-
-
+    return  outputs
 
 
 

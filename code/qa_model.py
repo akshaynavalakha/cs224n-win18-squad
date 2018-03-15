@@ -70,7 +70,10 @@ class QAModel(object):
         # Define optimizer and updates
         # (updates is what you need to fetch in session.run to do a gradient update)
         self.global_step = tf.Variable(0, name="global_step", trainable=False)
-        opt = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate) # you can try other optimizers
+        if self.FLAGS.model == "bidaf_dynamic":
+            opt = tf.train.AdamOptimizer(learning_rate=FLAGS.learning_rate)  # you can try other optimizers
+        else:
+            opt = tf.train.AdadeltaOptimizer(learning_rate=FLAGS.learning_rate) # you can try other optimizers
         self.updates = opt.apply_gradients(zip(clipped_gradients, params), global_step=self.global_step)
 
         # Define savers (for checkpointing) and summaries (for tensorboard)
@@ -324,8 +327,12 @@ class QAModel(object):
                 self.loss_end = tf.reduce_mean(loss_end)
                 tf.summary.scalar('loss_end', self.loss_end)
 
+                weights = tf.trainable_variables()
+                weights_loss = tf.add_n([tf.nn.l2_loss(v) for v in weights if 'bias' not in v.name])
+
+
                 # Add the two losses
-                self.loss = self.loss_start + self.loss_end
+                self.loss = self.loss_start + self.loss_end + 0.001 * weights_loss
                 tf.summary.scalar('loss', self.loss)
 
 
