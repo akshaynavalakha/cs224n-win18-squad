@@ -19,7 +19,7 @@ from tensorflow.python.ops.rnn_cell import DropoutWrapper
 from tensorflow.python.ops import variable_scope as vs
 from tensorflow.python.ops import rnn_cell
 from operator import mul
-
+import numpy as np
 
 class LSTMEncoder(object):
 
@@ -31,14 +31,15 @@ class LSTMEncoder(object):
         """
         self.hidden_size = hidden_size #200
         self.keep_prob = keep_prob
-        self.lstm = tf.nn.rnn_cell.BasicLSTMCell(self.hidden_size) #BasicLSTMCell LSTMBlockCell
+        self.lstm = tf.contrib.rnn.LSTMBlockCell(self.hidden_size) #BasicLSTMCell LSTMBlockCell
         # TODO not sure if I want to add dropout here
         #self.lstm = tf.nn.rnn_cell.DropoutWrapper(cell=self.lstm, input_keep_prob=self.keep_prob)
 
 
     def build_graph(self, inputs, masks, type):
 
-        with vs.variable_scope("LSTMEncoder"):
+        with vs.variable_scope("LSTMEncoder") as scope:
+            scope.reuse_variables()
             # get length of Q and C
             input_lens = tf.reduce_sum(masks, reduction_indices=1)
             inputs_size = inputs.get_shape().as_list()
@@ -60,7 +61,9 @@ class LSTMEncoder(object):
                 # IF it is Context_hidden
                 sentinel = tf.get_variable("sentinel_c", [1, 1, self.hidden_size], initializer=tf.random_normal_initializer()) # 1,200
                 inputs_temp = C_or_Q
-            #
+
+            ## Apply dropout
+            inputs_temp = tf.nn.dropout(inputs_temp, self.keep_prob)
             # reshape sentinel to add batch
             sentinel_tile = tf.tile(sentinel, [tf.shape(inputs_temp)[0], 1, 1]) #?, 1, 200(h)
             # add sentinel at beginning!!!
@@ -68,11 +71,76 @@ class LSTMEncoder(object):
 
             out.get_shape().as_list()
 
-            # Apply dropout
-            out = tf.nn.dropout(out, self.keep_prob)
-
             return out
 
+
+    def build_graph1(self, context, question, c_mask, q_mask):
+
+        with vs.variable_scope("LSTMEncoder") as scope:
+
+            # get length of Q and C
+            c_lens = tf.reduce_sum(c_mask, reduction_indices=1)
+            q_lens = tf.reduce_sum(q_mask, reduction_indices=1)
+            c_size = context.get_shape().as_list()
+            q_size = question.get_shape().as_list()
+
+            W = tf.get_variable("W", shape=[self.hidden_size, self.hidden_size], dtype=tf.float32,
+                                initializer=tf.contrib.layers.xavier_initializer(dtype=tf.float32))
+            b = tf.get_variable("b", shape=[self.hidden_size], dtype=tf.float32,
+                                initializer=tf.contrib.layers.xavier_initializer(dtype=tf.float32))
+            q_sentinel = tf.get_variable("sentinel_q", shape=[1, 1, self.hidden_size],
+                                         initializer=tf.random_normal_initializer())
+            c_sentinel = tf.get_variable("sentinel_c", shape=[1, 1, self.hidden_size],
+                                         initializer=tf.random_normal_initializer()) # 1,200
+
+            # TODO replace this with bidirectional LSTM to get more hidden states
+            # 1) get encoding for Context from LSTM
+            # use SHARE LSTM cell
+            lstm = tf.contrib.rnn.LSTMBlockCell(self.hidden_size)
+
+            #(fw_out, bw_out), _= tf.nn.bidirectional_dynamic_rnn(lstm, lstm, context, sequence_length=c_lens, dtype=tf.float32)
+            #D = tf.concat([fw_out, bw_out], axis=2)
+            D, D1 =tf.nn.dynamic_rnn(lstm, context, sequence_length=c_lens, dtype=tf.float32)
+
+
+            #D, _ = tf.nn.dynamic_rnn(lstm, context, sequence_length=c_lens, dtype=tf.float32)
+            scope.reuse_variables()
+
+            #
+            # 2) get encoding for Question from LSTM
+            #
+            #(fw_out1, bw_out1), _= tf.nn.bidirectional_dynamic_rnn(lstm, lstm, question, sequence_length=q_lens, dtype=tf.float32)
+            #Q_dash = tf.concat([fw_out1, bw_out1], axis=2)
+            Q_dash, Q_dash1 =tf.nn.dynamic_rnn(lstm, question, sequence_length=q_lens, dtype=tf.float32)
+            scope.reuse_variables()
+            #q_dash, _ = tf.nn.dynamic_rnn(lstm, question, sequence_length=q_lens, dtype=tf.float32)
+
+            #
+            # 3) Calculate q_dash = tanh(W q + b)
+            #
+            WQ=tf.tensordot(Q_dash, W, [[2], [0]])
+            WQb = WQ+b
+            Q = tf.tanh(WQb)
+            #Q = tf.layers.dense(Q_dash, self.hidden_size, activation=tf.tanh, reuse=True)
+
+            ## Apply dropout
+            D = tf.nn.dropout(D, self.keep_prob)
+            Q = tf.nn.dropout(Q, self.keep_prob)
+
+            # reshape sentinel to add batch
+            q_sentinel = tf.tile(q_sentinel, [tf.shape(question)[0], 1, 1]) #?, 1, 200(h)
+            c_sentinel = tf.tile(c_sentinel, [tf.shape(context)[0], 1, 1]) #?, 1, 200(h)
+
+            #
+            # add sentinel at beginning!!!
+            #
+            context_enc = tf.concat([c_sentinel, D], axis=1) # ?, 601, 200(h)
+            question_enc = tf.concat([q_sentinel, Q], axis=1)
+
+            context_enc.get_shape().as_list()
+            question_enc.get_shape().as_list()
+
+            return context_enc, question_enc
 
 class CoAttention(object):
 
@@ -127,14 +195,13 @@ class CoAttention(object):
 
             with tf.variable_scope('Coatt_encoder'):
                 # LSTM for coattention encoding
-                cell_fw = tf.nn.rnn_cell.BasicLSTMCell(self.query_hidden_size)
-                cell_bw = tf.nn.rnn_cell.BasicLSTMCell(self.query_hidden_size)
+                cell_fw = tf.contrib.rnn.LSTMBlockCell(self.query_hidden_size)
                 input_lens = tf.reduce_sum(context_mask, reduction_indices=1)
                 #?, 601, 400
-                (fw_out, bw_out), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_bw, CO_ATT,
-                                                       dtype=tf.float32, sequence_length=input_lens)
+                (fw_out, bw_out), _ = tf.nn.bidirectional_dynamic_rnn(cell_fw, cell_fw, CO_ATT,
+                                                                      dtype=tf.float32, sequence_length=input_lens)
                 U_1 = tf.concat([fw_out, bw_out], axis=2)
-                
+
                 dims = U_1.get_shape().as_list()
                 # Remove the sentinel vector from beginning
                 U_2 = U_1[:, 1:]
@@ -144,5 +211,4 @@ class CoAttention(object):
             out = tf.nn.dropout(U_2, self.keep_prob)
             #?, 601, 400(2h)
             return out
-
 
