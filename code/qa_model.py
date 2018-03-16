@@ -258,7 +258,8 @@ class QAModel(object):
             # the output of the decoder are start, end, alpha_logits and beta_logits
             # start and end have a shape of (batch_size, num_iterations)
             #alpha_logits and beta_logits have a shape of (batch_size, num_iterations, inpit_dim)
-            decoder = ANSWER_DECODER(self.FLAGS.hidden_size, self.keep_prob, 4, 4, self.FLAGS.batch_size)
+            decoder = ANSWER_DECODER(self.FLAGS.hidden_size, self.keep_prob, self.FLAGS.num_iterations, self.FLAGS.max_pool, self.FLAGS.batch_size)
+
             u_s_init = mod_layer_out[:,0,:]
             u_e_init = mod_layer_out[:,0,:]
             start_location, end_location, alpha_logits, beta_logits = decoder.build_graph(mod_layer_out, self.context_mask, u_s_init, u_e_init)
@@ -270,7 +271,7 @@ class QAModel(object):
                 #softmax_layer_start = SimpleSoftmaxLayer()
                 logits_start_tmp = [masked_softmax(logits, self.context_mask,1) for logits in alpha_logits]
                 self.alpha_logits , alpha_logits_probs = zip(*logits_start_tmp)
-                self.logits_start, self.probdist_start = self.alpha_logits[3], alpha_logits_probs[3]
+                self.logits_start, self.probdist_start = self.alpha_logits[self.FLAGS.num_iterations -1], alpha_logits_probs[self.FLAGS.num_iterations -1]
 
             # Use softmax layer to compute probability distribution for end location
            # Note this produces self.logits_end and self.probdist_end, both of which have shape (batch_size, context_len)
@@ -279,7 +280,7 @@ class QAModel(object):
             with vs.variable_scope("EndDist"):
                 logits_end_tmp = [masked_softmax(logits, self.context_mask,1) for logits in beta_logits]
                 self.beta_logits , beta_logits_probs = zip(*logits_end_tmp)
-                self.logits_end, self.probdist_end = self.beta_logits[3], beta_logits_probs[3]
+                self.logits_end, self.probdist_end = self.beta_logits[self.FLAGS.num_iterations -1], beta_logits_probs[self.FLAGS.num_iterations -1]
 
     def add_loss(self):
         """

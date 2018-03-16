@@ -552,6 +552,7 @@ class ANSWER_DECODER(object):
         # masks has a dimension [batch_size, seq_len]
 
        # batch_size = U_matrix.get_shape().as_list()[0]
+        masks_float = tf.to_float(masks)
         u_start = u_s
         u_end = u_e
         batch_size = u_start.get_shape().as_list()[0]
@@ -580,6 +581,7 @@ class ANSWER_DECODER(object):
                 output, hi =  cell(input_lstm, init_state)  #(batch_size,1, hidden_size)
 
                 alpha = highway_alpha.build_graph(U_matrix, masks, output, u_start, u_end, time_step ) #(batch_size, context_len)
+                alpha = tf.multiply(alpha, masks_float)
                 s_indx =tf.one_hot(tf.argmax(alpha, 1), alpha.get_shape().as_list()[1], off_value=-10000000.0, dtype=tf.float32)  # (batch_size, context_len)
                 s_indx = tf.expand_dims(s_indx,2)#(batch_size, context_len,1)
                 # Update the u_start and u_end for the next iteration
@@ -592,6 +594,7 @@ class ANSWER_DECODER(object):
 
 
                 beta  = highway_beta.build_graph(U_matrix, masks, output, u_start, u_end, time_step ) #(batch_size , context_len)
+                beta  = tf.multiply(beta, masks_float)
                 e_indx = tf.one_hot(tf.argmax(beta, 1), alpha.get_shape().as_list()[1], off_value=-10000000.0, dtype=tf.float32) #(batch_size, context_len)
                 e_indx = tf.expand_dims(e_indx,2) #(batch_size, context_len, 1)
                 u_end = tf.reduce_max(tf.multiply(U_matrix, e_indx), 1) #(batch_size, dim)
@@ -658,6 +661,9 @@ class HNM(object):
             out_in = tf.contrib.layers.fully_connected(tf.concat([m1, m2], axis=2), num_outputs=self.max_pool, activation_fn=None, scope=self.scope +'out_in', reuse=use)
             out = maxout(out_in, num_units=1)  # (bacth_size, seq_len, 1)
             out = tf.squeeze(out, axis=2) #(batch_size, seq_len)
+
+            #Apply dropout
+            out = tf.nn.dropout(out, self.keep_prob)
 
         return out
 
