@@ -316,7 +316,7 @@ class QAModel(object):
                 weights_loss = tf.add_n([tf.nn.l2_loss(v) for v in weights if 'bias' not in v.name])
 
                 # Add the two losses
-                self.loss = self.loss_start + self.loss_end + weights_loss
+                self.loss = self.loss_start + self.loss_end + 0.001 *weights_loss
                 tf.summary.scalar('loss', self.loss)
 
             else:
