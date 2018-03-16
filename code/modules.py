@@ -580,7 +580,7 @@ class ANSWER_DECODER(object):
                 output, hi =  cell(input_lstm, init_state)  #(batch_size,1, hidden_size)
 
                 alpha = highway_alpha.build_graph(U_matrix, masks, output, u_start, u_end, time_step ) #(batch_size, context_len)
-                s_indx =tf.one_hot(tf.argmax(alpha, 1), alpha.get_shape().as_list()[1], off_value=-10000.0, dtype=tf.float32)  # (batch_size, context_len)
+                s_indx =tf.one_hot(tf.argmax(alpha, 1), alpha.get_shape().as_list()[1], off_value=-10000000.0, dtype=tf.float32)  # (batch_size, context_len)
                 s_indx = tf.expand_dims(s_indx,2)#(batch_size, context_len,1)
                 # Update the u_start and u_end for the next iteration
                 #fn_s = lambda position: index(U_matrix, s_indx, position)
@@ -592,7 +592,7 @@ class ANSWER_DECODER(object):
 
 
                 beta  = highway_beta.build_graph(U_matrix, masks, output, u_start, u_end, time_step ) #(batch_size , context_len)
-                e_indx = tf.one_hot(tf.argmax(beta, 1), alpha.get_shape().as_list()[1], off_value=-10000.0, dtype=tf.float32) #(batch_size, context_len)
+                e_indx = tf.one_hot(tf.argmax(beta, 1), alpha.get_shape().as_list()[1], off_value=-10000000.0, dtype=tf.float32) #(batch_size, context_len)
                 e_indx = tf.expand_dims(e_indx,2) #(batch_size, context_len, 1)
                 u_end = tf.reduce_max(tf.multiply(U_matrix, e_indx), 1) #(batch_size, dim)
 
@@ -606,11 +606,11 @@ class ANSWER_DECODER(object):
                 # update the init_state for the next iteration
                 init_state = hi
 
-                if time_step != 0:
-                    start.append(s_indx)
-                    end.append(e_indx)
-                    alpha_logits.append(alpha)
-                    beta_logits.append(beta)
+
+                start.append(s_indx)
+                end.append(e_indx)
+                alpha_logits.append(alpha)
+                beta_logits.append(beta)
 
         return start, end, alpha_logits, beta_logits
 

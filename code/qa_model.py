@@ -258,7 +258,7 @@ class QAModel(object):
             # the output of the decoder are start, end, alpha_logits and beta_logits
             # start and end have a shape of (batch_size, num_iterations)
             #alpha_logits and beta_logits have a shape of (batch_size, num_iterations, inpit_dim)
-            decoder = ANSWER_DECODER(self.FLAGS.hidden_size, self.keep_prob, 5, 4, self.FLAGS.batch_size)
+            decoder = ANSWER_DECODER(self.FLAGS.hidden_size, self.keep_prob, 4, 4, self.FLAGS.batch_size)
             u_s_init = mod_layer_out[:,0,:]
             u_e_init = mod_layer_out[:,0,:]
             start_location, end_location, alpha_logits, beta_logits = decoder.build_graph(mod_layer_out, self.context_mask, u_s_init, u_e_init)
@@ -306,14 +306,17 @@ class QAModel(object):
                 loss_start = [tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=self.ans_span[:, 0]) for logits in self.alpha_logits]
                 loss_end = [tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=self.ans_span[:, 1]) for logits in self.beta_logits]
 
-                self.loss_start = tf.reduce_sum(loss_start)
+                self.loss_start = tf.reduce_mean(loss_start)
                 tf.summary.scalar('loss_start', self.loss_start)  # log to tensorboard
 
                 self.loss_end = tf.reduce_mean(loss_end)
                 tf.summary.scalar('loss_end', self.loss_end)
 
+                weights = tf.trainable_variables()
+                weights_loss = tf.add_n([tf.nn.l2_loss(v) for v in weights if 'bias' not in v.name])
+
                 # Add the two losses
-                self.loss = self.loss_start + self.loss_end
+                self.loss = self.loss_start + self.loss_end + weights_loss
                 tf.summary.scalar('loss', self.loss)
 
             else:
