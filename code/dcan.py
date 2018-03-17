@@ -248,5 +248,5 @@ class CoAttention(object):
             C_D = tf.matmul(Q_concat_CQ, A_D) #?, 400(2h), 601
 
             CO_ATT = tf.concat([context_hiddens, tf.transpose(C_D, perm=[0, 2, 1])], axis=2) #?, 601, 600(3h)
-
+            CO_ATT = CO_ATT[:, 1:]
             return CO_ATT
