@@ -135,13 +135,13 @@ class QAModel(object):
         # between the context and the question.
         if self.FLAGS.model == "baseline" :
             encoder = RNNEncoder(self.FLAGS.hidden_size, self.keep_prob)
-        elif self.FLAGS.model == "bidaf" or "bidaf_dynamic":
+        elif self.FLAGS.model == "bidaf" or self.FLAGS.model == "bidaf_dynamic":
             print "INSIDE the BIDAF model"
             encoder = RNNEncoder_LSTM(self.FLAGS.hidden_size, self.keep_prob)
-        elif self.FLAGS.model == "coatt":
+        elif self.FLAGS.model == "coatt" or self.FLAGS.model == "coatt_dynamic":
             encoder = LSTMEncoder(self.FLAGS.hidden_size, self.keep_prob)
 
-        if self.FLAGS.model != "coatt" :
+        if self.FLAGS.model != "coatt" and self.FLAGS.model != "coatt_dynamic":
             context_hiddens = encoder.build_graph(self.context_embs, self.context_mask) # (batch_size, context_len, hidden_size*2)
             question_hiddens = encoder.build_graph(self.qn_embs, self.qn_mask) # (batch_size, question_len, hidden_size*2)
 
@@ -283,6 +283,42 @@ class QAModel(object):
                 logits_end_tmp = [masked_softmax(logits, self.context_mask,1) for logits in beta_logits]
                 self.beta_logits , beta_logits_probs = zip(*logits_end_tmp)
                 self.logits_end, self.probdist_end = self.beta_logits[self.FLAGS.num_iterations -1], beta_logits_probs[self.FLAGS.num_iterations -1]
+
+        elif self.FLAGS.model =="coatt_dynamic":
+            context_hiddens, question_hiddens = encoder.build_graph1(self.context_embs, self.qn_embs, self.context_mask, self.qn_mask)
+
+            attn_layer = CoAttention(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2)
+            attn_output = attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens, self.context_mask)
+
+            #blended_reps = tf.concat([context_hiddens, attn_output], axis=2)
+            # Apply fully connected layer to each blended representation
+            # Note, blended_reps_final corresponds to b' in the handout
+            # Note, tf.contrib.layers.fully_connected applies a ReLU non-linarity here by default
+            decoder = ANSWER_DECODER(self.FLAGS.hidden_size, self.keep_prob, self.FLAGS.num_iterations, self.FLAGS.max_pool, self.FLAGS.batch_size)
+
+            u_s_init = attn_output[:,0,:]
+            u_e_init = attn_output[:,0,:]
+            start_location, end_location, alpha_logits, beta_logits = decoder.build_graph(attn_output, self.context_mask, u_s_init, u_e_init)
+
+
+            # Use softmax layer to compute probability distribution for start location
+            # Note this produces self.logits_start and self.probdist_start, both of which have shape (batch_size, context_len)
+            with vs.variable_scope("StartDist"):
+                #softmax_layer_start = SimpleSoftmaxLayer()
+                logits_start_tmp = [masked_softmax(logits, self.context_mask,1) for logits in alpha_logits]
+                self.alpha_logits , alpha_logits_probs = zip(*logits_start_tmp)
+                self.logits_start, self.probdist_start = self.alpha_logits[self.FLAGS.num_iterations -1], alpha_logits_probs[self.FLAGS.num_iterations -1]
+
+                # Use softmax layer to compute probability distribution for end location
+                # Note this produces self.logits_end and self.probdist_end, both of which have shape (batch_size, context_len)
+
+
+            with vs.variable_scope("EndDist"):
+                logits_end_tmp = [masked_softmax(logits, self.context_mask,1) for logits in beta_logits]
+                self.beta_logits , beta_logits_probs = zip(*logits_end_tmp)
+                self.logits_end, self.probdist_end = self.beta_logits[self.FLAGS.num_iterations -1], beta_logits_probs[self.FLAGS.num_iterations -1]
+
+
 
     def add_loss(self):
         """
