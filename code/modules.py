@@ -746,12 +746,9 @@ class SelfAttn(object):
             # Calculate attention distribution
             values_expand = tf.expand_dims(values, axis=2) #(batch_size, num_values, 1, value_vec_size)
             keys_expand = tf.expand_dims(values, axis= 1) #(batch_size, 1, num_values, value_vec_size)
-            pa_values = tf.layers.dense(values_expand, self.value_vec_size, activation=None) # (batch_size, num_values, 1, 1)
-            pb_values = tf.layers.dense(keys_expand, self.value_vec_size, activation=None) #(batch_size, 1 , num_values,1)
-            self_attn_logits_tmp = tf.tanh((pa_values+pb_values)) #(batch_size, num_values, num_values, vec_size)
-            self_attn_logits = tf.layers.dense(self_attn_logits_tmp, 1, activation=None) ##(batch_size, num_values, num_values, 1)
-            self_attn_logits = tf.squeeze(self_attn_logits, axis=3) #(batch_size, num_values, num_values)
-
+            pa_values = tf.layers.dense(values_expand, 1, activation=None) # (batch_size, num_values, 1, 1)
+            pb_values = tf.layers.dense(keys_expand, 1, activation=None) #(batch_size, 1 , num_values,1)
+            self_attn_logits = tf.tanh(tf.squeeze((pa_values+pb_values), axis=3)) #(batch_size, num_values, num_values)
 
             attn_logits_mask = tf.expand_dims(values_mask, 1) # shape (batch_size, 1, num_values)
             _, attn_dist = masked_softmax(self_attn_logits, attn_logits_mask, 2) # shape (batch_size, num_values, num_values). take softmax over values
