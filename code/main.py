@@ -55,6 +55,7 @@ tf.app.flags.DEFINE_integer("question_len", 30, "The maximum question length of 
 tf.app.flags.DEFINE_integer("embedding_size", 100, "Size of the pretrained word vectors. This needs to be one of the available GloVe dimensions: 50/100/200/300")
 tf.app.flags.DEFINE_integer("max_pool", 16, "maximum pooling size for answer decoder.")
 tf.app.flags.DEFINE_integer("num_iterations", 6, "number of iterations for answer decoder.")
+tf.app.flags.DEFINE_float("regularization", 0.0002, "Fraction of units randomly dropped on non-recurrent connections.")
 
 # How often to print, save, eval
 tf.app.flags.DEFINE_integer("print_every", 1, "How many iterations to do per print.")

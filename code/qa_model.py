@@ -30,7 +30,7 @@ from tensorflow.python.ops import embedding_ops
 from evaluate import exact_match_score, f1_score
 from data_batcher import get_batch_generator
 from pretty_print import print_example
-from modules import RNNEncoder, SimpleSoftmaxLayer, BasicAttn, BiDafAttn, RNNEncoder_LSTM, MODEL_LAYER_BIDAF, END_WORD_LAYER, ANSWER_DECODER, masked_softmax
+from modules import RNNEncoder, SimpleSoftmaxLayer, BasicAttn, BiDafAttn, RNNEncoder_LSTM, MODEL_LAYER_BIDAF, END_WORD_LAYER, ANSWER_DECODER, masked_softmax, SelfAttn
 from dcan import LSTMEncoder, CoAttention
 logging.basicConfig(level=logging.INFO)
 
@@ -135,7 +135,7 @@ class QAModel(object):
         # between the context and the question.
         if self.FLAGS.model == "baseline" :
             encoder = RNNEncoder(self.FLAGS.hidden_size, self.keep_prob)
-        elif self.FLAGS.model == "bidaf" or self.FLAGS.model == "bidaf_dynamic":
+        elif self.FLAGS.model == "bidaf" or self.FLAGS.model == "bidaf_dynamic" or self.FLAGS.model=="bidaf_self_attn" or self.FLAGS.model=="bidaf_dynamic_self_attn":
             print "INSIDE the BIDAF model"
             encoder = RNNEncoder_LSTM(self.FLAGS.hidden_size, self.keep_prob)
         elif self.FLAGS.model == "coatt" or self.FLAGS.model == "coatt_dynamic":
@@ -149,7 +149,7 @@ class QAModel(object):
         # Use context hidden states to attend to question hidden states
         if self.FLAGS.model == "baseline" :
             attn_layer = BasicAttn(self.keep_prob, self.FLAGS.hidden_size * 2, self.FLAGS.hidden_size * 2)
-            attn_output = attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens)  # attn_output is shape (batch_size, context_len, hidden_size*2)
+            _,attn_output = attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens)  # attn_output is shape (batch_size, context_len, hidden_size*2)
             # Concat attn_output to context_hiddens to get blended_reps
             blended_reps = tf.concat([context_hiddens, attn_output], axis=2)  # (batch_size, context_len, hidden_size*4)
             # Apply fully connected layer to each blended representation
@@ -203,11 +203,19 @@ class QAModel(object):
                 self.logits_end, self.probdist_end = softmax_layer_end.build_graph(out,self.context_mask)
 
 
-        elif self.FLAGS.model =="bidaf":
+        elif self.FLAGS.model =="bidaf"  or self.FLAGS.model=="bidaf_self_attn":
             attn_layer = BiDafAttn(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2)
-            attn_output = attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens, self.context_mask) # attn_output is shape (batch_size, context_len, hidden_size*8)
+            attn_output_tmp = attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens, self.context_mask) # attn_output is shape (batch_size, context_len, hidden_size*8)
             # Set of vectors which produces a set of query aware feature vectors for each word in the context
             #blended_reps = attn_output  #(batch_size, num_keys, 4*value_vec_size)
+
+            if self.FLAGS.model == "bidaf_self_attn":
+                self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size * 8, self.FLAGS.hidden_size * 8)
+                _,self_attn_output = self_attn_layer.build_graph(attn_output_tmp, self.context_mask) #(batch_size, conetx_len, 8*hidden_size)
+                attn_output = tf.concat([attn_output_tmp, self_attn_output], axis=2) #(batch_size, context_len, 16*hidden_size)
+            else:
+                attn_output = attn_output_tmp
+
 
             # In BIDAF the attention output is feed to a modeling layer
             # The Modeling layer is a 2 layer lstm
@@ -243,9 +251,16 @@ class QAModel(object):
                 softmax_layer_end = SimpleSoftmaxLayer()
                 self.logits_end, self.probdist_end = softmax_layer_end.build_graph(blended_reps_end_final, self.context_mask)
 
-        elif self.FLAGS.model =="bidaf_dynamic":
+        elif self.FLAGS.model =="bidaf_dynamic" or self.FLAGS.model =="bidaf_dynamic_self_attn":
             attn_layer = BiDafAttn(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2)
-            attn_output = attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens, self.context_mask) # attn_output is shape (batch_size, context_len, hidden_size*8)
+            attn_output_tmp = attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens, self.context_mask) # attn_output is shape (batch_size, context_len, hidden_size*8)
+
+            if self.FLAGS.model == "bidaf_dynamic_self_attn":
+                self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size * 8, self.FLAGS.hidden_size * 8)
+                _,self_attn_output = self_attn_layer.build_graph(attn_output_tmp,self.context_mask)  # (batch_size, conetx_len, 8*hidden_size)
+                attn_output = tf.concat([attn_output_tmp, self_attn_output], axis=2) #(batch_size, context_len, 16*hidden_size)
+            else:
+                attn_output = attn_output_tmp
 
             # Set of vectors which produces a set of query aware feature vectors for each word in the context
             #blended_reps = attn_output  #(batch_size, num_keys, 4*value_vec_size)
@@ -355,7 +370,7 @@ class QAModel(object):
                 weights_loss = tf.add_n([tf.nn.l2_loss(v) for v in weights if 'bias' not in v.name])
 
                 # Add the two losses
-                self.loss = self.loss_start + self.loss_end + 0.001 *weights_loss
+                self.loss = self.loss_start + self.loss_end + self.FLAGS.regularization *weights_loss
                 tf.summary.scalar('loss', self.loss)
 
             else:
@@ -374,7 +389,7 @@ class QAModel(object):
 
 
                 # Add the two losses
-                self.loss = self.loss_start + self.loss_end + 0.001 * weights_loss
+                self.loss = self.loss_start + self.loss_end + self.FLAGS.regularization * weights_loss
                 tf.summary.scalar('loss', self.loss)
 
 
