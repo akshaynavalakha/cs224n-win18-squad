@@ -138,10 +138,10 @@ class QAModel(object):
         elif self.FLAGS.model == "bidaf" or self.FLAGS.model == "bidaf_dynamic" or self.FLAGS.model=="bidaf_self_attn" or self.FLAGS.model=="bidaf_dynamic_self_attn":
             print "INSIDE the BIDAF model"
             encoder = RNNEncoder_LSTM(self.FLAGS.hidden_size, self.keep_prob)
-        elif self.FLAGS.model == "coatt" or self.FLAGS.model == "coatt_dynamic":
+        elif self.FLAGS.model == "coatt" or self.FLAGS.model == "coatt_dynamic" or self.FLAGS.model=="coatt_dynamic_self_attn":
             encoder = LSTMEncoder(self.FLAGS.hidden_size, self.keep_prob)
 
-        if self.FLAGS.model != "coatt" and self.FLAGS.model != "coatt_dynamic":
+        if self.FLAGS.model != "coatt" and self.FLAGS.model != "coatt_dynamic" and self.FLAGS.model!="coatt_dynamic_self_attn":
             context_hiddens = encoder.build_graph(self.context_embs, self.context_mask) # (batch_size, context_len, hidden_size*2)
             question_hiddens = encoder.build_graph(self.qn_embs, self.qn_mask) # (batch_size, question_len, hidden_size*2)
 
@@ -233,7 +233,7 @@ class QAModel(object):
 
 
             # Use softmax layer to compute probability distribution for end location
-           # Note this produces self.logits_end and self.probdist_end, both of which have shape (batch_size, context_len)
+            # Note this produces self.logits_end and self.probdist_end, both of which have shape (batch_size, context_len)
 
 
             with vs.variable_scope("EndDist"):
@@ -291,7 +291,7 @@ class QAModel(object):
                 self.logits_start, self.probdist_start = self.alpha_logits[self.FLAGS.num_iterations -1], alpha_logits_probs[self.FLAGS.num_iterations -1]
 
             # Use softmax layer to compute probability distribution for end location
-           # Note this produces self.logits_end and self.probdist_end, both of which have shape (batch_size, context_len)
+            # Note this produces self.logits_end and self.probdist_end, both of which have shape (batch_size, context_len)
 
 
             with vs.variable_scope("EndDist"):
@@ -299,12 +299,19 @@ class QAModel(object):
                 self.beta_logits , beta_logits_probs = zip(*logits_end_tmp)
                 self.logits_end, self.probdist_end = self.beta_logits[self.FLAGS.num_iterations -1], beta_logits_probs[self.FLAGS.num_iterations -1]
 
-        elif self.FLAGS.model =="coatt_dynamic":
+        elif self.FLAGS.model =="coatt_dynamic" or self.FLAGS.model == "coatt_dynamic_self_attn":
             context_hiddens, question_hiddens = encoder.build_graph1(self.context_embs, self.qn_embs, self.context_mask, self.qn_mask)
 
             attn_layer = CoAttention(self.keep_prob, self.FLAGS.hidden_size*2, self.FLAGS.hidden_size*2)
-            attn_output = attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens, self.context_mask)
 
+            if self.FLAGS.model == "coatt_dynamic_self_attn":
+                CoATT = attn_layer.build_graph1(question_hiddens, self.qn_mask, context_hiddens, self.context_mask)
+                self_attn_layer = SelfAttn(self.keep_prob, self.FLAGS.hidden_size * 8, self.FLAGS.hidden_size * 8)
+                _, self_attn_output = self_attn_layer.build_graph(CoATT, self.context_mask)  # (batch_size, conetx_len, 8*hidden_size)
+                attn_output = tf.concat([CoATT, self_attn_output], axis=2) #(batch_size, context_len, 16*hidden_size)
+            else:
+                U = attn_layer.build_graph(question_hiddens, self.qn_mask, context_hiddens, self.context_mask)
+                attn_output = U
             #blended_reps = tf.concat([context_hiddens, attn_output], axis=2)
             # Apply fully connected layer to each blended representation
             # Note, blended_reps_final corresponds to b' in the handout
@@ -356,7 +363,7 @@ class QAModel(object):
         """
         with vs.variable_scope("loss"):
 
-            if self.FLAGS.model == "bidaf_dynamic":
+            if self.FLAGS.model == "bidaf_dynamic" or self.FLAGS.model == "bidaf_dynamic_self_attn" or self.FLAGS.model == "coatt_dynamic_self_attn" or self.FLAGS.model =="coatt_dynamic":
                 loss_start = [tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=self.ans_span[:, 0]) for logits in self.alpha_logits]
                 loss_end = [tf.nn.sparse_softmax_cross_entropy_with_logits(logits=logits, labels=self.ans_span[:, 1]) for logits in self.beta_logits]
 

@@ -212,3 +212,41 @@ class CoAttention(object):
             #?, 601, 400(2h)
             return out
 
+    def build_graph1(self, question_hiddens, qn_mask, context_hiddens, context_mask):
+
+        with vs.variable_scope('Coattention') as scope:
+            question_hiddens.get_shape().as_list() #? , 31, 200
+            context_hiddens.get_shape().as_list()  #? ,601, 200
+
+            #Update masks add sentinel of ones at beginning
+            q_sent = tf.ones([tf.shape(qn_mask)[0], 1], dtype=tf.int32)
+            c_sent = tf.ones([tf.shape(context_mask)[0], 1], dtype=tf.int32)
+
+            qn_mask = tf.concat([q_sent, qn_mask], axis=1)
+            context_mask = tf.concat([c_sent, context_mask], axis=1)
+
+            question_length = tf.shape(question_hiddens)[1]
+            context_length = tf.shape(context_hiddens)[1]
+            keys_dim = tf.shape(context_hiddens)[2]
+
+
+            Q_tranpose = tf.transpose(question_hiddens, perm=[0, 2, 1]) #?, 200, 31
+
+            # L = D.T * Q = C.T * Q
+            L = tf.matmul(context_hiddens, Q_tranpose)  #?, 601, 31
+
+            L_transpose = tf.transpose(L, perm=[0, 2, 1]) #?, 31, 601
+
+            A_D = tf.map_fn(lambda x: tf.nn.softmax(x), L_transpose, dtype=tf.float32) #?, 31, 601
+
+            A_Q = tf.map_fn(lambda x: tf.nn.softmax(x), L, dtype=tf.float32) #?, 601, 31
+
+            C_Q = tf.matmul(tf.transpose(context_hiddens, perm=[0, 2, 1]), A_Q)  #?, 200, 31
+
+            Q_concat_CQ = tf.concat([Q_tranpose, C_Q], axis=1) #?,  400(2h), 31
+
+            C_D = tf.matmul(Q_concat_CQ, A_D) #?, 400(2h), 601
+
+            CO_ATT = tf.concat([context_hiddens, tf.transpose(C_D, perm=[0, 2, 1])], axis=2) #?, 601, 600(3h)
+
+            return CO_ATT
