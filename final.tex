@@ -7,12 +7,12 @@
 %\documentstyle[nips13submit_09,times,art10]{article} % For LaTeX 2.09
 
 
-\title{SQUAD with BiDAF and DCN}
+\title{Question Answering System with BiDAF and DCN}
 
 
 \author{
 Akshay Navalakha \\
-\texttt{akshay@stanford.edu} \\
+\texttt{akshaynavalakha@gmail.com} \\
 \And
 Subin Modeel \\
 \texttt{subin@apache.org} \\
@@ -37,8 +37,8 @@ Subin Modeel \\
 \maketitle
 
 \begin{abstract}
-Machine comprehension (MC) and question answering (QA) are related NLP tasks which have seen increased interest with the release of the Stanford Question Answering Dataset (SQuAD). In this paper, we explore 2 neural architecture for the QA task The Bidirectional Attention Flow
-model(BiDAF) \& Dynamic Coattention Networks(DCN).We reimplemented the BiDAF and DCN models, compared their attention mechanism. Our best single model achieves an F1 score of  74.524\% F1 and 64.261\% EM on the test set.
+Machine comprehension (MC) is a challenging Natural Language Processing problem. It requires modelling the complex behaviour between the context and questions to find the answer. In this project, we have re-implemented from scratch two neural architecture for the QA task The Bidirectional Attention Flow
+model(BiDAF) \& Dynamic Coattention Networks(DCN) with some modifications. Our best single model achieves an F1 score of  74.524\% F1 and 64.261\% EM on the test set with BidaF model.
 \end{abstract}
 
 
@@ -65,56 +65,78 @@ model(BiDAF) \& Dynamic Coattention Networks(DCN).We reimplemented the BiDAF and
 
 \section{Introduction}
 
-Question answering (QA) is a task in natural language processing that requires both natural language understanding and world knowledge. In this task, a model must give answers to queries presented in natural language based on a context paragraph.The context contains the answer to the query.
-Most of the QA datasets were high in quality due to human annotation, but small in size (Berant et al., 2014; Richardson et al., 2013). Hence, they did not allow for training data-intensive, expressive models such as deep neural networks.
+Question answering (QA) is a task in natural language processing that requires both natural language understanding and world knowledge. In this task, a model must give answers to queries presented in natural language based on a context paragraph.The context contains the answer to the query. These problems require some attention mechanism between the context and the questions.
 
-To address this problem, researchers have developed large-scale datasets through semi-automated techniques (Hermann et al., 2015; Hill et al., 2016). Compared to their smaller, hand-annotated counterparts, these QA datasets allow the training of more expressive models. However, it has been shown that they differ from more natural, human annotated datasets in the types of reasoning required to answer the questions (Chen et al., 2016).
+For the purposes of this project we use Stanford Question Answering dataset(SQUAD) released by Rajpurkar et al. (2016). The SQUAD dataset is orders of magnitude larger than all previous hand-annotated datasets and has a variety of qualities that culminate in a natural QA task. SQuAD has the desirable quality that answers are spans in a reference document. This constrains answers to the space of all possible spans. However, Rajpurkar et al. (2016) show that the dataset retains a diverse set of answers and requires different forms of logical reasoning, including multi-sentence reasoning.
 
-Recently, Rajpurkar et al. (2016) released the Stanford Question Answering dataset (SQuAD), which is orders of magnitude larger than all previous hand-annotated datasets and has a variety of qualities that culminate in a natural QA task. SQuAD has the desirable quality that answers are spans in a reference document. This constrains answers to the space of all possible spans. However, Rajpurkar et al. (2016) show that the dataset retains a diverse set of answers and requires different forms of logical reasoning, including multi-sentence reasoning.
+For the purpose of the paper we have explored a combination mainly from two neural architectures introduced in The Bidirectional Attention Flow model(BiDAF) \& Dynamic Coattention Networks(DCN).
 
-We explored 2 neural architecture for the QA task The Bidirectional Attention Flow model(BiDAF) \& Dynamic Coattention Networks(DCN).
+In addition to re-implementing a vanilla BiDAF, we have experimented with substituting the output layer of the BiDAF with the Dynamic Pointer Decoder from the DCN paper. Also, in addition a bi-directional attention a self-attention layer (inspired from RNET) was inserted to get a Bidaf + Self Attention with a dynamic decoder network. A comparison in the performance of the three versions of Bidaf is shown in table 1 .
 
-Dynamic Coattention model [3], exploits the deep learning technique of attention.Here we compute the affinity matrix between the context and question, which is then used to weight the continuous representations of the two documents.The decoder layer is complicated where it iteratively  estimates the start and end location of the answer, allowing it to better handle local minima. 
+Apart from Bidaf, a Dynamic Coattention model  was re-implemented[3]. Here we compute the affinity matrix between the context and question, which is then used to weight the continuous representations of the two documents.The decoder layer is complicated where it iteratively  estimates the start and end location of the answer, allowing it to better handle local minima. Two variants of the model were implemented one with decoder mentioned in the DCN paper, second one with Bidaf Decoder.
 
-Bi-Directional Attention Flow (BiDAF)[2] model  has a encoder similar to the Dynamic Coattention model[3] where they first compute an affinity matrix which is used to compute both context-to-query and query-to-context attention. However, the decoder and output layers for BiDAF are much simpler.
-We focussed on these last two papers in creating our models for the QA task.
 
-\section{Background}
+\section{Related Work}
+The SQUAD is less than 2 years old but has led to significant amount of papers in reading comprehension. Wang \& Jiang (2016b) build question-aware passage representation with match-LSTM (Wang \& Jiang, 2016a), and predict
+answer boundaries in the passage with pointer networks (Vinyals et al., 2015).  Seo et al. (2016) introduce bi-directional attention flow networks to model question-passage pairs at multiple levels of granularity. Xiong et al. (2016) propose dynamic co-attention networks which attend the question and passage simultaneously and iteratively refine answer. RNET(2018) uses gated attention between the question and context and self attention layer. These models have come very close to human performance. 
 
-We use pre-trained GloVe vectors to represent the words in the context and question.Let \( x^{Q}_{1} , x^{Q}_{2} , . . . , x^{Q}_{n} \)  denote words in the question and \(x^{D}_{1} , x^{D}_{2} , . . . , x^{D}_{m} \) denote the same for words in the context.
+\section{Problem Statement}
+
+Given a context words $( x^{Q}_{1} , x^{Q}_{2} , . . . , x^{Q}_{n} )$ denote words in the question and  $(x^{D}_{1} , x^{D}_{2} , . . . , x^{D}_{m} )$ we need to predict the answer span $(x_{s}, x_{e})$ from the context which matches answer to the question. A F1 and Exact match metric is used to evaluate the performance of the model. The squad dataset is divided into 80\%  training dataset, 10\% in dev dataset and 10\% in testing set (hidden).
+
+\section{Dataset and Features}
+
+
+We use pre-trained GloVe vectors  of 100 dimensional to represent the words in the context and question.Let \( x^{Q}_{1} , x^{Q}_{2} , . . . , x^{Q}_{n} \)  denote words in the question and \(x^{D}_{1} , x^{D}_{2} , . . . , x^{D}_{m} \) denote the same for words in the context. We found no significant increase in performance when we increase dimensional of Glove vectors. 
+
+The lengths of answer, context and questions is plotted in fig 1 , fig 2 and fig 3 respectively. Based on the histogram output we decided to use a context length of 400 and question length of 30. Decreasing the context length from 600 to 400 led to a speedup of almost 2 times.
+
+
+\section{Models}
+In this section we describe the 2 different models base models and their variations. The first two models are re-implementation of the Bidaf without character level embedding[refer paper] (referred to as vanilla Bidaf) and Dynamic Coattention network [refer to paper]. Then we interchanged the decoders of Bidaf and Co-attention to see the difference in performance resulting in what we refer to as Bidaf Dynamic.Replacing the decoder of the bidaf would provide it the flexibility of recovering local maxmima. The last two models is adding a self attention layer after the BiDAF attention layer in both vanilla Bidaf and Bidaf Dynamic. 
 
 \subsection{BiDAF}
 
-BiDAF  model is a hierarchical multi-stage process and consists of six layers:
+We did a re-implementation of the BIDAF model without the character level encoding. The different layers are listed below
 \begin{enumerate}
-\item Character Embedding Layer maps each word to a vector space using character-level CNNs.
-\item Word Embedding Layer maps each word to a vector space using a pre-trained word em- bedding model.
-\item Contextual Embedding Layer utilizes contextual cues from surrounding words to refine the embedding of the words. These first three layers are applied to both the query and context.
-\item Attention Flow Layer couples the query and context vectors and produces a set of query- aware feature vectors for each word in the context.
+\item \textbf{Word Embedding Layer}:Maps each word in the context and questions to a vector space using a pre-trained word em- bedding model to produce \( x^{c}_{1} , x^{c}_{2} , . . . , x^{c}_{n} \)  words embedding for each word in  context and \(y^{q}_{1} , y^{q}_{2} , . . . , y^{q}_{m} \) word embedding for each word in questions
+\item \textbf{RNN Encoder Layer}: The encoder is a bi-directional LSTM which is shared between the context and the questions. This gives us a better shared representation of the context and questions.
+            $${c_1, . . . , c_N} = BiLSTM \{ x^{c}_{1} , x^{c}_{2} , . . . , x^{c}_{n}\} $$
+            $${q_1, . . . , q_N} = BiLSTM \{ y^{q}_{1} , y^{q}_{2} , . . . , x^{c}_{n}\} $$
+
+\item \textbf{Attention FlowLayer}:Couples the query and context vectors and produces a set of query- aware feature vectors for each word in the context.
+Assume we have context hidden states $c_1, . . . , c_N \ \epsilon \  R^{2h} $ and question hidden states $q_1, . . . , q_M \ \epsilon \  R^{2h} $. We compute the similarity matrix $ S \ \epsilon \  R^{N\times M}$ , which contains a similarity score $S_{ij}$ for each pair $(c_i,q_j)$ of context and question hidden states.
+$$S =w^{T}_{sim}[c_{i};q_{j};c_{i} o q_{j}]\ \epsilon \ R $$
+Here, $c_{i} o q_{j} $ is an elementwise product and $ w_{sim} \ \epsilon \ R^{6h} $ is a weight vector.
+Next, we perform Context-to-Question (C2Q) Attention. (This is similar to our baseline’s Attention Layer). We take the row-wise softmax of S to obtain attention distributions $ \alpha^i$, which we use to take weighted sums of the question hidden states $q_j$, yielding C2Q attention outputs $a_i$.
+In equations, this is:
+$$\alpha^i = softmax(S_i,:)\ \epsilon \ R^{M} \\     \forall i \ \epsilon \ \{1,...,N\} $$
+$$a_i =  \sum_{j=1}^{M}\alpha^{i}_{j}q_j \ \epsilon \ R^{2h} \   \forall i\ \epsilon \ \{1,...,N \}$$
+Next, we perform Question-to-Context(Q2C) Attention. For each context location $i\ \epsilon \ \{1,...,N \}$, we take the max of the corresponding row of the similarity matrix, $m_{i} = max_{j} S_{ij} \ \epsilon \ R$. Then we take the softmax over the resulting vector $m \ \epsilon \ R^{N} $ – this gives us an attention distribution $\beta \ \epsilon \ R^{N}$ over context locations. We then use $\beta$ to take a weighted sum of the context hidden states $c_{i}$ – this is the Q2C attention output $c^{'}$. In equations:
+$$ m_{i} = max_{j}S_{ij} \ \epsilon \ R^{N} \forall i \ \epsilon \ \{1,...,N\}\ $$
+$$ \beta = softmax(m)\ \epsilon \ R^N $$
+$$c^{'} = \sum_{i=1}^{N}\beta_{i}c_{i} \ \epsilon \ R^{2h} $$
+
+Lastly, for each context location $i \ \epsilon \ \{1,...,N\}$ we obtain the output $b_i$ of the Bidirectional Attention Flow Layer by combining the context hidden state $c_i$, the C2Q attention output $a_i$, and
+
+the Q2C attention output c′:
+$$b_{i} =[c_{i};a_{i};c_{i}oa_{i};c_{i} o c^{'}] \ \epsilon \ R^{8h} \forall i \ \epsilon \ \{1,...,N\}$$
+where ◦ represents element-wise multiplication.
+
+\item \textbf{Self Attention}: The output of the attention flow layer is feed into the self attention module.
+$$e^{i}_{j} = tanh(W_{1}b_{j} + W_{2}b{i})$$
+$$\alpha^{i} = softmax(e^{i})$$
+$$a^{i} = \sum_{j=1}^{N}\alpha^{i}_{j}b_{j}$$
+
+The output of the attention flow layer and self attention are concatenated before sending it out to the modelling layer
+$$h_{i} = $$
+
 \item Modeling Layer employs a Recurrent Neural Network to scan the context. 6. Output Layer provides an answer to the query.
 \end{enumerate}
 
 
-Assume we have context hidden states $c_1, . . . , c_N \ \epsilon \  R^{2h} $ and question hidden states $q_1, . . . , q_M \ \epsilon \  R^{2h} $. We compute the similarity matrix S ∈ RN ×M , which contains a similarity score Sij for each pair (ci,qj) of context and question hidden states.
-S =wT [c;q;c◦q]∈R ij sim i j i j
-Here, ci ◦ qj is an elementwise product and wsim ∈ R6h is a weight vector.
-Next, we perform Context-to-Question (C2Q) Attention. (This is similar to our baseline’s Attention Layer). We take the row-wise softmax of S to obtain attention distributions αi, which we use to take weighted sums of the question hidden states qj, yielding C2Q attention outputs ai.
-In equations, this is:
-αi = softmax(Si,:) ∈ RM ∀i ∈ {1,...,N} M
-ai =  αjiqj ∈ R2h ∀i ∈ {1,...,N} j=1
-Next, we perform Question-to-Context(Q2C) Attention. For each context location i ∈ {1, . . . , N }, we take the max of the corresponding row of the similarity matrix, mi = maxj Sij ∈ R. Then we take the softmax over the resulting vector m ∈ RN – this gives us an attention distribution β ∈ RN over context locations. We then use β to take a weighted sum of the context hidden states ci – this is the Q2C attention output c′. In equations:
-mi = maxSij ∈ R ∀i ∈ {1,...,N} j
-β = softmax(m) ∈ RN N
-c′ = βici ∈R2h i=1
-(1)
-Lastly, for each context location i ∈ {1,...,N} we obtain the output bi of the Bidirectional Attention Flow Layer by combining the context hidden state ci, the C2Q attention output ai, and
-10
-the Q2C attention output c′:
-$$bi =[ci;ai;ci ◦ai;ci ◦c′]∈R8h ∀i∈{1,...,N}$$
-where ◦ represents elementwise multiplication.
 
 
-\begin{math}\epsilon\end{math}
 \subsection{DCN}
 
 \subsubsection{Encoder}
@@ -146,10 +168,46 @@ u_{t} = BiLSTM ( u_{t−1}, u_{t+1},  [d_{t}; c^{D}_{t}])    \ \epsilon \  R^{2l
 be the best possible answer, as the coattention encoding.
 
 
+We extend the Dynamic Coattention Network (DCN)
+by Xiong et al. (2017) with a deep residual coattention encoder. This allows the network to build
+richer representations of the input by enabling each input sequence to attend to previous attention
+contexts. Vaswani et al. (2017) show that the stacking of attention layers helps model long-range dependencies. 
+
 \section{Experiments}
+
+
+
+\begin{table}[ht]
+\caption{Leaderboard Performance} % title of Table
+\centering % used for centering table
+\begin{tabular}{c c c c c} % centered columns (4 columns)
+\hline\hline %inserts double horizontal lines
+Model & Dev EM & Dev F1 & Test EM & Test F1 \\ [0.5ex] % inserts table
+%heading
+\hline % inserts single horizontal line
+BiDAF  Only (Ours) & 40.0 & 51.0 & - & -\\
+BiDAF Attention with BidaF decoder (Ours) & 40.0 & 51.0 & - & -\\
+BiDAF Attention with Answer Pointer decoder (Ours) & 40.0 & 51.0 & - & -\\
+\\ \hline \\
+Coattention Only (Ours) & 40.0 & 51.0 & - & -\\
+Coattention with BidaF decoder (Ours) & 40.0 & 51.0 & - & -\\
+Coattention with Answer Pointer decoder (Ours) & 40.0 & 51.0 & - & -\\
+\\ \hline \\
+BiDAF & - & 76.3 & - & 76.9\\
+DCN  & 65.4 & 75.6 & 66.2 & 75.9\\
+SQUAD Baseline & 40.0 & 51.0 & 40.4 & 51.0\\
+Baseline (Rajpurkar et al., 2016) & 40.0 & 51.0 & 40.4 & 51.0\\
+Human (Rajpurkar et al., 2016) & 81.4 & 91.0 & 82.3 & 91.2\\ [1ex] % [1ex] adds vertical space
+\hline %inserts single line
+\end{tabular}
+\label{table:nonlin} % is used to refer this table in the text
+\end{table}
+
+
 \begin{figure}
 \includegraphics[scale=.65]{template/Answer.png}
 \centering
+\caption{Answer length distribution.}
 \end{figure}
 
 
@@ -157,8 +215,14 @@ be the best possible answer, as the coattention encoding.
 \begin{figure}
 \includegraphics[scale=.65]{template/Context.png}
 \centering
+\caption{Context length distribution.}
 \end{figure}
 
+\begin{figure}
+\includegraphics[scale=.65]{template/Question.png}
+\centering
+\caption{Question length distribution.}
+\end{figure}
  
 
 \section{Conclusion}
@@ -172,6 +236,10 @@ As of right now, we achieve a F1 score of 74.1 and an EM score of 64.1, which is
 There are a few more experiments we would like to try in the future.We would like to replace the BiDAF Decoder with DCN Pointer decoder, which is able to recover from local maxima.Also, Try other modifications like using more word features.
 The original BiDAF implementation used character encoding which was not implemented by us and there is still scope for further hyperparameter
 tuning and bug fixing.
+
+\section{Contribution}
+The BIDAF model implementation, Dynamic Decoder from the Co-attention paper and Self Attention module was coded by Akshay.
+The encoder and attention layer from DCN for Co-attention was done by Subin. Subin wrote scripts for visualizations.
 
 \section{Acknowledgments}
 
@@ -190,6 +258,10 @@ We would also like to give our thanks to Microsoft for providing GPUs on Azure t
 
 [4] J. Pennington, R. Socher, and C. D. Manning, “Glove: Global vectors for word representation.,” in EMNLP, vol. 14,\href{https://nlp.stanford.edu/pubs/glove.pdf}{pp. 1532–1543}, 2014.
 
+[5] Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N. Gomez,
+Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. In NIPS, 2017.
+
+[6]Rupesh Kumar Srivastava, Klaus Greff, Jurgen Schmidhuber. Highway Networks 	arXiv:1505.00387 2015.
 }
 
 \end{document}
