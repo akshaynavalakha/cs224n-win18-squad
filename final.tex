@@ -38,42 +38,20 @@ Subin Modeel \\
 
 \begin{abstract}
 Machine comprehension (MC) is a challenging Natural Language Processing problem. It requires modelling the complex behaviour between the context and questions to find the answer. In this project, we have re-implemented from scratch two neural architecture for the QA task The Bidirectional Attention Flow
-model(BiDAF) \& Dynamic Coattention Networks(DCN) with some modifications. Our best single model achieves an F1 score of  74.524\% F1 and 64.261\% EM on the test set with BidaF model.
+model(BiDAF) \& Dynamic Coattention Networks(DCN) with some modifications.We also experimented with using BiDAF decoder in DCN and DCN decoder in BiDAF.Our best model achieves an F1 score of  75.142\% F1 and 65.593\% EM on the test set with BiDAF model.
 \end{abstract}
-
-
-\section{TODO}
-    Title, Author(s)
-    Abstract: It should not be more than 300 words.
-    
-    Introduction: This section introduces the problem, and your overall approach to the problem.
-    
-    Background/Related Work: This section discusses relevant literature for your project.
-    
-    Approach: This section details your approach to the problem. For example, this is the section where you would describe the architecture of your neural network. You should be specific - you may want to include equations, figures, plots, etc.
-    
-    Experiments: In this section, you describe:
-        The dataset(s) you used
-        How you ran your experiments (e.g. model configurations, learning rate, training time, etc.)
-        The evaluation metric(s) you used
-        Your results. It's very important to show both quantitative evaluation (show numbers, figures, tables etc. relating to your evaluation metric(s)) and qualitative evaluation (show example results, etc.). 
-        
-    Conclusion: What have you learned? Suggest future ideas.
-    
-    References: Include references to all literature that informed your project work. This is absolutely necessary.
-
 
 \section{Introduction}
 
 Question answering (QA) is a task in natural language processing that requires both natural language understanding and world knowledge. In this task, a model must give answers to queries presented in natural language based on a context paragraph.The context contains the answer to the query. These problems require some attention mechanism between the context and the questions.
 
-For the purposes of this project we use Stanford Question Answering dataset(SQUAD) released by Rajpurkar et al. (2016). The SQUAD dataset is orders of magnitude larger than all previous hand-annotated datasets and has a variety of qualities that culminate in a natural QA task. SQuAD has the desirable quality that answers are spans in a reference document. This constrains answers to the space of all possible spans. However, Rajpurkar et al. (2016) show that the dataset retains a diverse set of answers and requires different forms of logical reasoning, including multi-sentence reasoning.
+For the purposes of this project we use Stanford Question Answering dataset(SQUAD)[1] released by Rajpurkar et al. (2016). The SQUAD dataset is orders of magnitude larger than all previous hand-annotated datasets and has a variety of qualities that culminate in a natural QA task. SQuAD has the desirable quality that answers are spans in a reference document. This constrains answers to the space of all possible spans. However, Rajpurkar et al. (2016) show that the dataset retains a diverse set of answers and requires different forms of logical reasoning, including multi-sentence reasoning.
 
-For the purpose of the paper we have explored a combination mainly from two neural architectures introduced in The Bidirectional Attention Flow model(BiDAF) \& Dynamic Coattention Networks(DCN).
+For the purpose of the paper we have explored a combination mainly from two neural architectures introduced in The Bidirectional Attention Flow model(BiDAF)[2] \& Dynamic Coattention Networks(DCN)[3].
 
-In addition to re-implementing a vanilla BiDAF, we have experimented with substituting the output layer of the BiDAF with the Dynamic Pointer Decoder from the DCN paper. Also, in addition a bi-directional attention a self-attention layer (inspired from RNET) was inserted to get a Bidaf + Self Attention with a dynamic decoder network. A comparison in the performance of the three versions of Bidaf is shown in table 1 .
+In addition to re-implementing a vanilla BiDAF, we have experimented with substituting the output layer of the BiDAF with the Dynamic Pointer Decoder from the DCN paper. Also, in addition a bi-directional attention a self-attention layer (inspired from RNET) was inserted to get a BiDAF + Self Attention with a dynamic decoder network. A comparison in the performance of the three versions of BiDAF is shown in table 1 .
 
-Apart from Bidaf, a Dynamic Coattention model  was re-implemented[3]. Here we compute the affinity matrix between the context and question, which is then used to weight the continuous representations of the two documents.The decoder layer is complicated where it iteratively  estimates the start and end location of the answer, allowing it to better handle local minima. Two variants of the model were implemented one with decoder mentioned in the DCN paper, second one with Bidaf Decoder.
+Apart from BiDAF, a Dynamic Coattention model  was re-implemented. Here we compute the affinity matrix between the context and question, which is then used to weight the continuous representations of the two documents.The decoder layer is complicated where it iteratively  estimates the start and end location of the answer, allowing it to better handle local minima. Two variants of the model were implemented one with decoder mentioned in the DCN paper, second one with BiDAF Decoder.
 
 
 \section{Related Work}
@@ -87,24 +65,38 @@ Given a context words $( x^{Q}_{1} , x^{Q}_{2} , . . . , x^{Q}_{n} )$ denote wor
 \section{Dataset and Features}
 
 
-We use pre-trained GloVe vectors  of 100 dimensional to represent the words in the context and question.Let \( x^{Q}_{1} , x^{Q}_{2} , . . . , x^{Q}_{n} \)  denote words in the question and \(x^{D}_{1} , x^{D}_{2} , . . . , x^{D}_{m} \) denote the same for words in the context. We found no significant increase in performance when we increase dimensional of Glove vectors. 
+We use pre-trained GloVe vectors  of 100 dimensional to represent the words in the context and question.Let \( x^{c}_{1} , x^{c}_{2} , . . . , x^{c}_{n} \)  denote word embedding in the context and \(x^{q}_{1} , x^{q}_{2} , . . . , x^{q}_{m} \) denote the same for words in the question. 
+We found slight significant in performance when we increase dimensional of Glove vectors but that comes at the cost of increase in training time.So we use Glove vectors of 100 dimensional to conduct more experiments 
 
-The lengths of answer, context and questions is plotted in fig 1 , fig 2 and fig 3 respectively. Based on the histogram output we decided to use a context length of 400 and question length of 30. Decreasing the context length from 600 to 400 led to a speedup of almost 2 times.
+The lengths of answer, context and questions is plotted in fig 4 , fig 5 and fig 6 respectively. Based on the histogram output we decided to use a context length of 400 and question length of 30. Decreasing the context length from 600 to 400 led to a speedup of almost 2 times enabling us to run more number of experiments.
 
 
 \section{Models}
-In this section we describe the 2 different models base models and their variations. The first two models are re-implementation of the Bidaf without character level embedding[refer paper] (referred to as vanilla Bidaf) and Dynamic Coattention network [refer to paper]. Then we interchanged the decoders of Bidaf and Co-attention to see the difference in performance resulting in what we refer to as Bidaf Dynamic.Replacing the decoder of the bidaf would provide it the flexibility of recovering local maxmima. The last two models is adding a self attention layer after the BiDAF attention layer in both vanilla Bidaf and Bidaf Dynamic. 
+In this section we describe the 2 different models and their variations. The first two models are re-implementation of the Bidaf without character level embedding[2] (referred to as vanilla BiDAF) and Dynamic Coattention network [3]. Then we interchanged the decoders of Bidaf and Co-attention to see the difference in performance resulting in what we refer to as Bidaf Dynamic.Replacing the decoder of the bidaf would provide it the flexibility of recovering local maxmima. The last two models is adding a self attention layer after the BiDAF attention layer in both vanilla Bidaf and Bidaf Dynamic. 
 
-\subsection{BiDAF}
+The description of the BIDAF with Self Attention and Dynamic Pointer and Dynamic Co-attention model is as below
 
-We did a re-implementation of the BIDAF model without the character level encoding. The different layers are listed below
-\begin{enumerate}
-\item \textbf{Word Embedding Layer}:Maps each word in the context and questions to a vector space using a pre-trained word em- bedding model to produce \( x^{c}_{1} , x^{c}_{2} , . . . , x^{c}_{n} \)  words embedding for each word in  context and \(y^{q}_{1} , y^{q}_{2} , . . . , y^{q}_{m} \) word embedding for each word in questions
-\item \textbf{RNN Encoder Layer}: The encoder is a bi-directional LSTM which is shared between the context and the questions. This gives us a better shared representation of the context and questions.
+\subsection{BiDAF with Self Attention and Dynamic Pointer}
+
+We did a re-implementation of the BIDAF model without the character level encoding and added/ replaced some of the layers. The addition includes using a Iterative Decoder and a self attention mechanism as shown in fig 1.
+
+\begin{figure}
+\includegraphics[scale=.65]{template/Bidafselfdynamic.png}
+\centering
+\caption{BiDAF with Self Attention and Dynamic Pointer Decoder.}
+\end{figure}
+
+\subsubsection{Word Embedding Layer}
+Maps each word in the context and questions to a vector space using a pre-trained word em- bedding model to produce \( x^{c}_{1} , x^{c}_{2} , . . . , x^{c}_{n} \)  words embedding for each word in  context and \(y^{q}_{1} , y^{q}_{2} , . . . , y^{q}_{m} \) word embedding for each word in questions
+
+\subsubsection{RNN Encoder Layer}: 
+
+The encoder is a bi-directional LSTM which is shared between the context and the questions. This gives us a better shared representation of the context and questions.
             $${c_1, . . . , c_N} = BiLSTM \{ x^{c}_{1} , x^{c}_{2} , . . . , x^{c}_{n}\} $$
             $${q_1, . . . , q_N} = BiLSTM \{ y^{q}_{1} , y^{q}_{2} , . . . , x^{c}_{n}\} $$
 
-\item \textbf{Attention FlowLayer}:Couples the query and context vectors and produces a set of query- aware feature vectors for each word in the context.
+\subsubsection{Bidirectional Attention}
+Couples the query and context vectors and produces a set of query- aware feature vectors for each word in the context.
 Assume we have context hidden states $c_1, . . . , c_N \ \epsilon \  R^{2h} $ and question hidden states $q_1, . . . , q_M \ \epsilon \  R^{2h} $. We compute the similarity matrix $ S \ \epsilon \  R^{N\times M}$ , which contains a similarity score $S_{ij}$ for each pair $(c_i,q_j)$ of context and question hidden states.
 $$S =w^{T}_{sim}[c_{i};q_{j};c_{i} o q_{j}]\ \epsilon \ R $$
 Here, $c_{i} o q_{j} $ is an elementwise product and $ w_{sim} \ \epsilon \ R^{6h} $ is a weight vector.
@@ -123,18 +115,27 @@ the Q2C attention output c′:
 $$b_{i} =[c_{i};a_{i};c_{i}oa_{i};c_{i} o c^{'}] \ \epsilon \ R^{8h} \forall i \ \epsilon \ \{1,...,N\}$$
 where ◦ represents element-wise multiplication.
 
-\item \textbf{Self Attention}: The output of the attention flow layer is feed into the self attention module.
+
+\subsubsection{Self Attention}
+A self attention layer was inserted between the bi-directional layer and decoder. Even though LSTM should be able to theoretically capture the references between context of large length, practically it fails because of vanishing gradients. So a self-attention layer was introduced to relate the current word in the context with all other words.
+
+The output of the bidirectional layer is feed into the self attention module.
 $$e^{i}_{j} = tanh(W_{1}b_{j} + W_{2}b{i})$$
 $$\alpha^{i} = softmax(e^{i})$$
 $$a^{i} = \sum_{j=1}^{N}\alpha^{i}_{j}b_{j}$$
 
-The output of the attention flow layer and self attention are concatenated before sending it out to the modelling layer
-$$h_{i} = $$
+The output of the bidirectional layer and self attention are concatenated before sending it out to the modelling layer
+$$H = [b; a]$$
 
-\item Modeling Layer employs a Recurrent Neural Network to scan the context. 6. Output Layer provides an answer to the query.
-\end{enumerate}
+\subsubsection{Modeling Layer}
+We have kept the modelling layer the same as in the original BIDAF paper. It takes in H which is $R^{N x 16d}$, which encodes the query-aware representations concatenated with the self attention. This layer captures the interaction between the context and the query. We use a bi-directional LSTM of 2 layers with a ouptut size of d for each direction.
 
 
+
+
+\subsubsection{Dynamic Answer Pointer}
+The dynamic answer decoder is similar to the one used in DCN[3]. The output of the model layer is feed into the dynamic decoder. The initial state of the LSTM is all set to zero and the initial start and end word is selected to be the first word of the context. The decoder using a LSTM and a highway max network. The motivation of substituting the original decoder with the iterative reasoning decoder was that the model could recover from the local maxima. A improved performance of 1\% on F1 score was achieved after substituting the original decoder with the iterative reasoning decoder.
+For the decoder the initial state for the start word and end word is set to the first context word. Also, the initial state of the LSTM is set to be zero valued tensor. It is expected that the model will learn from this init state and iteratively update the start and end word.
 
 
 \subsection{DCN}
@@ -149,9 +150,21 @@ We define an intermediate question representation $ Q′ = \langle q_{1} . . . q
 To allow for variation between the question encoding space and the document encod- ing space, we introduce a non-linear projection layer on top of the question encoding. 
 The final representation for the question becomes: $ Q = tanh \langle   W^Q Q′ + b^Q \rangle \  \epsilon \  R^{l\times(n+1)} $
 
+\begin{figure}
+\includegraphics[scale=.5]{template/coatt_bidaf.png}
+\centering
+\caption{Coattention with BiDAF Decoder}
+\end{figure}
 
-\subsubsection{Coattention Decoder}
-The coattention mechanism  attends to the question and document simultaneously, similar to (Lu et al., 2016), and finally fuses both attention contexts. Figure 2 provides an illustration of the coattention encoder.
+\begin{figure}
+\includegraphics[scale=.5]{template/coatt_dynamic.png}
+\centering
+\caption{Coattention with Dynamic Pointer Decoder length distribution.}
+\end{figure}
+
+\subsubsection{Coattention}
+
+The coattention mechanism  attends to the question and document simultaneously, similar to (Lu et al., 2016), and finally fuses both attention contexts. Figure 2 and Figure 3 provides an illustration of the coattention models we implemented.
 We first compute the affinity matrix, which contains affinity scores corresponding to all pairs of document words and question words: $ L = D^{T}Q \ \epsilon \  R^{(m+1)\times(n+1)} $. The affinity matrix is nor-
 malized row-wise to produce the attention weights $A^{Q}$ across the document for each word in the question, and column-wise to produce the attention weights $A^{D}$ across the question for each word in the document:
 $$A^{Q} = softmax (L) \  \epsilon \ R^{(m+1)\times(n+1)} \ and \  A^{D} = softmax(L^{T}) \ \epsilon \ R^{(n+1)\times(m+1)}  $$
@@ -167,13 +180,44 @@ LSTM: $$
 u_{t} = BiLSTM ( u_{t−1}, u_{t+1},  [d_{t}; c^{D}_{t}])    \ \epsilon \  R^{2l}.$$ We define $U =[u_1,...,u_m]\ \epsilon \ R^{2l \times m} $ ,which provides a foundation for selecting which span may
 be the best possible answer, as the coattention encoding.
 
-
-We extend the Dynamic Coattention Network (DCN)
-by Xiong et al. (2017) with a deep residual coattention encoder. This allows the network to build
-richer representations of the input by enabling each input sequence to attend to previous attention
-contexts. Vaswani et al. (2017) show that the stacking of attention layers helps model long-range dependencies. 
+\subsubsection{Decoder}
+We used a Dynamic Answer Pointer Decoder as mentioned in DCN and then we replaced that with a BiDAF Decoder.
 
 \section{Experiments}
+We found that most of the context were below 400.So we used context length 400 in our models.This reduced time taken to run our models.We tried to build different models and compare the improvements for each of the models.We see that moving from Co-attention to Bidaf gave us 3 \% points improvement on the dev leaderboard. Substituting the Bidaf decoder with the dynamic decoder gave an improved performance of 1\% on F1 score with a hidden size of 100. The best model which we got was for bidaf implementation with a bidaf decoder with a hidden size of 200. We could'nt test a hidden size of 200 with the dynamic decoder because of space constraints.
+
+Table 1 gives a comparison of the different models performance. The best score of 75\% on FM score was achieved on the test score.
+
+\begin{figure}
+\minipage{0.32\textwidth}
+  \includegraphics[width=\linewidth]{template/Answer.png}
+  \caption{Answer length distribution.}
+\endminipage\hfill
+\minipage{0.32\textwidth}
+  \includegraphics[width=\linewidth]{template/Context.png}
+  \caption{Context length distribution.}
+\endminipage\hfill
+\minipage{0.32\textwidth}
+  \includegraphics[width=\linewidth]{template/Question.png}
+  \caption{Question length distribution.}
+\endminipage\hfill
+\end{figure}
+
+\begin{figure}
+\minipage{0.5\textwidth}
+  \includegraphics[width=\linewidth]{template/pie_baseline_bidaf.png}
+\endminipage\hfill
+\minipage{0.5\textwidth}
+  \includegraphics[width=\linewidth]{template/pie_coatt_bidaf.png}
+\endminipage\hfill
+\caption{Venn diagram of the questions answered correctly(i.e EM) by our models(total Q=10570).\& Correctly answered questions broken down by the 10 most frequent first words in the question}
+\end{figure}
+
+Adding the self-attention layer provided provided a slight improvement in performance.
+
+To reduce the over-fitting problem we tried with dropouts ranging from 0.15 to 0.3 and regularization factor of 0.0001 to 0.001. It seems that the regularization and dropout had very little effect on the model and the dev loss begins to plateau off at or near dev F1 score of 68\%.
+
+An experiment to understand the impact of learning rate was also performed. We changed the learning rate from 0.001 to 0.0001. As the learning rate decreases we get a smoother graph for the loss.
 
 
 
@@ -185,18 +229,18 @@ contexts. Vaswani et al. (2017) show that the stacking of attention layers helps
 Model & Dev EM & Dev F1 & Test EM & Test F1 \\ [0.5ex] % inserts table
 %heading
 \hline % inserts single horizontal line
-BiDAF  Only (Ours) & 40.0 & 51.0 & - & -\\
-BiDAF Attention with BidaF decoder (Ours) & 40.0 & 51.0 & - & -\\
-BiDAF Attention with Answer Pointer decoder (Ours) & 40.0 & 51.0 & - & -\\
+BiDAF Attention + BidaF decoder (Ours) & 64.427 & 74.444 & 65.593 & 75.142 \\
+BiDAF Attention + Answer Pointer decoder (Ours) & 63.652 & 74.024 & 64.597 & 74.364 \\ 	
+BiDAF Attention + Self Attention (Ours) & 63.500 & 73.638 & - & -\\
+BiDAF Attention + Self Attention + Answer Pointer decoder (Ours) & 63.954 & 74.051 & - & -\\
 \\ \hline \\
-Coattention Only (Ours) & 40.0 & 51.0 & - & -\\
-Coattention with BidaF decoder (Ours) & 40.0 & 51.0 & - & -\\
-Coattention with Answer Pointer decoder (Ours) & 40.0 & 51.0 & - & -\\
+Coattention Only (Ours) & 53.955 & 64.171 & - & -\\
+Coattention with BidaF decoder (Ours) & 58.079 & 69.008 & - & -\\
+Coattention with Answer Pointer decoder (Ours) & 58.543 & 69.390 & - & -\\
 \\ \hline \\
 BiDAF & - & 76.3 & - & 76.9\\
 DCN  & 65.4 & 75.6 & 66.2 & 75.9\\
-SQUAD Baseline & 40.0 & 51.0 & 40.4 & 51.0\\
-Baseline (Rajpurkar et al., 2016) & 40.0 & 51.0 & 40.4 & 51.0\\
+SQUAD Baseline(Ours) & 34.853 & 44.117 & - & -\\
 Human (Rajpurkar et al., 2016) & 81.4 & 91.0 & 82.3 & 91.2\\ [1ex] % [1ex] adds vertical space
 \hline %inserts single line
 \end{tabular}
@@ -204,42 +248,32 @@ Human (Rajpurkar et al., 2016) & 81.4 & 91.0 & 82.3 & 91.2\\ [1ex] % [1ex] adds 
 \end{table}
 
 
-\begin{figure}
-\includegraphics[scale=.65]{template/Answer.png}
-\centering
-\caption{Answer length distribution.}
-\end{figure}
 
-
-
-\begin{figure}
-\includegraphics[scale=.65]{template/Context.png}
-\centering
-\caption{Context length distribution.}
-\end{figure}
-
-\begin{figure}
-\includegraphics[scale=.65]{template/Question.png}
-\centering
-\caption{Question length distribution.}
-\end{figure}
  
 
 \section{Conclusion}
 
 We were able to build a good model for answering questions presented to it in natural language. Of the 4 models we developed our BiDAF model was able to achieve better performance.
-As of right now, we achieve a F1 score of 74.1 and an EM score of 64.1, which is on par with some of the entries on the official SQuAD leaderboard.
+As of right now, we achieve a F1 score of 75.142 and an EM score of 65.593 which is on par with some of the entries on the official SQuAD leaderboard.
 
+\begin{figure}
+\includegraphics[scale=.5]{template/pie_bidaf_bidaf_self.png}
+\centering
+\caption{Venn diagram of the questions answered correctly(i.e EM) by our models(total Q=10570).\& Correctly answered questions broken down by the 10 most frequent first words in the question}
+\end{figure}
 
 \subsection*{Future Work}
 
-There are a few more experiments we would like to try in the future.We would like to replace the BiDAF Decoder with DCN Pointer decoder, which is able to recover from local maxima.Also, Try other modifications like using more word features.
-The original BiDAF implementation used character encoding which was not implemented by us and there is still scope for further hyperparameter
-tuning and bug fixing.
+There are a few more experiments we would like to try in the future like using more word features.
+The original BiDAF implementation used character encoding which was not implemented by us and there is still scope for further hyperparameter tuning and bug fixing.
+Coattention with self attention gave poor performace.We would like to implement DCP+[7] which is based on stacked coattention to improve performance Since Vaswani et al. (2017) show that the stacking of attention layers helps model long-range dependencies. We would also like to improve the performance of Coattention with Dynamic Pointer Decoder.
+
+
+
 
 \section{Contribution}
 The BIDAF model implementation, Dynamic Decoder from the Co-attention paper and Self Attention module was coded by Akshay.
-The encoder and attention layer from DCN for Co-attention was done by Subin. Subin wrote scripts for visualizations.
+The encoder and attention layer from DCN for Co-attention, and a simplified BiDAF decoder for Coattention was done by Subin.Subin wrote scripts for visualizations.
 
 \section{Acknowledgments}
 
@@ -262,6 +296,8 @@ We would also like to give our thanks to Microsoft for providing GPUs on Azure t
 Lukasz Kaiser, and Illia Polosukhin. Attention is all you need. In NIPS, 2017.
 
 [6]Rupesh Kumar Srivastava, Klaus Greff, Jurgen Schmidhuber. Highway Networks 	arXiv:1505.00387 2015.
+
+[7]Caiming Xiong, Victor Zhong, Richard Socher ,DCN+: Mixed Objective and Deep Residual Coattention for Question Answering 	arXiv:1711.00106.
 }
 
 \end{document}
